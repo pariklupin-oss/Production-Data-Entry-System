@@ -12,6 +12,10 @@
   html,body{margin:0;height:100%;background:#f3f1fb;font-family:system-ui,sans-serif}
   iframe{position:fixed;inset:0;width:100%;height:100%;border:0}
   #msg{padding:40px 20px;text-align:center;color:#1d1b3a}
+
+  .complaint-shortcut{position:fixed;z-index:2147483647;left:calc(16px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom));display:inline-flex;align-items:center;gap:8px;padding:12px 18px;border-radius:28px;background:#07836c;color:#fff;text-decoration:none;font:700 14px/1.2 system-ui,sans-serif;box-shadow:0 4px 16px #0004;border:2px solid #fff}
+  .complaint-shortcut:focus-visible{outline:3px solid #f6c900;outline-offset:3px}
+  @media(max-width:480px){.complaint-shortcut{left:10px;bottom:calc(10px + env(safe-area-inset-bottom));font-size:13px;padding:11px 14px}}
 </style>
 </head>
 <body>
@@ -25,5 +29,6 @@
   document.body.appendChild(f);
 </script>
 <noscript><p id="msg">Please enable JavaScript to open Starish Production.</p></noscript>
+  <a class="complaint-shortcut" href="https://pariklupin-oss.github.io/Starish-Report-Portal/?openComplaint=1" target="_top" aria-label="Open maintenance complaint form">🛠 Raise Maintenance Complaint</a>
 </body>
 </html>
