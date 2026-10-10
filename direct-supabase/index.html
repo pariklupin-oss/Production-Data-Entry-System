@@ -229,7 +229,7 @@ function st(j){const s=String(j['ERP Status']||'').toLowerCase();return s==='sub
 
 function el(tag,cls,txt){const e=document.createElement(tag);if(cls)e.className=cls;if(txt!=null)e.textContent=txt;return e}
 
-let firstJobs=null;async function init(){try{firstJobs=rpc('listJobs',false);firstJobs.catch(()=>{});boot=await rpc('bootstrap');$('identity').textContent=boot.user.email+' · DIRECT SQL TEST · 15-day jobs';$('avatar').textContent=boot.user.email.charAt(0).toUpperCase();
+let firstJobs=null;async function init(){try{firstJobs=rpc('listJobs',false);firstJobs.catch(()=>{});boot=await rpc('bootstrap');$('identity').textContent=boot.user.email+' · DIRECT SQL TEST · 1-month active jobs';$('avatar').textContent=boot.user.email.charAt(0).toUpperCase();
 
 fillMachines();fillProcesses();
 
