@@ -44,6 +44,7 @@ begin
   if jsonb_typeof(p_data->k)<>'string' or length(p_data->>k)>1000 then raise exception 'Invalid text'; end if;
  end loop;
  perform 1 from public.production_planning_test where row_id=p_id for update;
+ if exists(select 1 from public.production_planning_test where row_id=p_id and coalesce(data->>'Process Name','') ~* 'STRAPP?ING|BUNDLING|OUTWARD.*QUALITY|QUALITY.*CHECK|\yOQC\y') then raise exception 'Automatic process: operator entry is not allowed'; end if;
  if exists(select 1 from public.production_planning_test where row_id=p_id and (erp_closed or lower(data->>'Job Status')='closed')) then raise exception 'Job is closed'; end if;
  result=public.production_test_mutate(p_action,p_id,p_expected,p_data,auth.uid()::text||':'||p_request);
  return result;
