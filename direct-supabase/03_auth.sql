@@ -21,16 +21,16 @@ declare access_role text; k text; v numeric; result jsonb; entry_date date;
 begin
  select role into access_role from public.planning_direct_members where user_id=auth.uid() and enabled;
  if auth.uid() is null or access_role is null then raise exception 'Operator access required'; end if;
- if p_action not in ('save','extend','override') then raise exception 'Unsupported action'; end if;
+ if p_action is null or p_action not in ('save','extend','override') then raise exception 'Unsupported action'; end if;
  if p_action='override' and access_role<>'admin' then raise exception 'Administrator required for override'; end if;
  if p_id is null or length(p_id)>128 or p_expected is null or p_expected<1 then raise exception 'Job and revision required'; end if;
  if p_request is null or p_request !~ '^[a-zA-Z0-9-]{16,64}$' then raise exception 'Submission ID required'; end if;
- if jsonb_typeof(p_data)<>'object' or p_data-array['Start Time','End Time','Input Qty','Rej Qty','Production Qty','Production Date','Remarks','Destination','No of Pallets']<>'{}'::jsonb then raise exception 'Invalid entry fields'; end if;
+ if p_data is null or jsonb_typeof(p_data)<>'object' or p_data-array['Start Time','End Time','Input Qty','Rej Qty','Production Qty','Production Date','Remarks','Destination','No of Pallets']<>'{}'::jsonb then raise exception 'Invalid entry fields'; end if;
  if not(p_data ?& array['Start Time','End Time','Input Qty','Rej Qty','Production Qty','Production Date','Remarks','Destination','No of Pallets']) then raise exception 'Incomplete entry'; end if;
  foreach k in array array['Start Time','End Time'] loop
   if jsonb_typeof(p_data->k)<>'string' or p_data->>k !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then raise exception 'Invalid time'; end if;
  end loop;
- if p_data->>'Production Date' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then raise exception 'Invalid date'; end if;
+ if jsonb_typeof(p_data->'Production Date')<>'string' or p_data->>'Production Date' !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then raise exception 'Invalid date'; end if;
  entry_date=(p_data->>'Production Date')::date;
  if to_char(entry_date,'YYYY-MM-DD')<>p_data->>'Production Date' then raise exception 'Invalid date'; end if;
  foreach k in array array['Input Qty','Rej Qty','Production Qty','No of Pallets'] loop
