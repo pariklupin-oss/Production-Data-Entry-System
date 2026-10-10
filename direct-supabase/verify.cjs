@@ -2,6 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 let source=fs.readFileSync(__dirname+'/api.js','utf8').replace(/^import .*;$/gm,'').replace(/export /g,'');
 const calls=[],elements={};let enabled=true;
 const rows=[{row_id:'a',revision:3,source_row:1,data:{'Row ID':'a',Date:'2026-10-10','WO No':'WO1','Process Name':'PRINTING','ERP Status':'Pending','Job Status':'Open'}},{row_id:'b',revision:1,source_row:2,data:{'Row ID':'b',Date:'2020-01-01','WO No':'WO2','Process Name':'PRINTING','ERP Status':'Submitted','Job Status':'Closed'}},{row_id:'c',revision:1,source_row:3,data:{'Row ID':'c',Date:'2020-01-01','WO No':'WO3','Process Name':'PRINTING','ERP Status':'Pending','Job Status':'Open'}}];
+rows.push({row_id:'autoSubmitted',revision:1,source_row:6,data:{Date:'2026-10-10','Row ID':'autoSubmitted','Process Name':'STRAPPING BUNDLING','ERP Status':'Submitted','Job Status':'Closed'}});
 rows.push({row_id:'closed',revision:1,source_row:4,data:{Date:'2026-10-10','Row ID':'closed','Job Status':'Closed'}});rows.push({row_id:'erpclosed',revision:1,source_row:5,erp_closed:true,data:{Date:'2026-10-10','Row ID':'erpclosed','Job Status':'Open'}});
 const client={auth:{getSession:async()=>({data:{session:{user:{id:'u1',email:'operator@test'},access_token:'token'}}}),signOut:async()=>calls.push('logout'),onAuthStateChange:()=>{}},from:()=>({select:()=>({eq:()=>({single:async()=>({data:{enabled,role:'operator'}})})})})};
 const ctx=vm.createContext({SUPABASE_URL:'https://axgyeppfrcmhwrpxztvv.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_test',createClient:()=>client,document:{getElementById:id=>elements[id]??=( {hidden:true})},fetch:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>url.includes('/rpc/')?{message:'Saved'}:rows}},Intl,Date,Number,JSON,Error,Promise,Set,console});
@@ -9,7 +10,7 @@ vm.runInContext(source,ctx);
 (async()=>{
  assert.equal(await vm.runInContext('requireLogin()',ctx),'u1');
  assert.equal(vm.runInContext("new Date(monthCutoff_('2026-10-10')).toISOString().slice(0,10)",ctx),'2026-09-10');assert.equal(vm.runInContext("new Date(monthCutoff_('2026-03-31')).toISOString().slice(0,10)",ctx),'2026-02-28');
- const jobs=await vm.runInContext("rpc('listJobs')",ctx);assert.deepEqual(Array.from(jobs,j=>j['Row ID']),['a']);assert.equal(jobs[0].version,'3');
+ const jobs=await vm.runInContext("rpc('listJobs')",ctx);assert.deepEqual(Array.from(jobs,j=>j['Row ID']),['a','autoSubmitted']);assert.equal(jobs[0].version,'3');assert.equal(jobs[1].autoProcess,true);assert.equal(vm.runInContext("isAutoProcess_('OUTWARD QUALITY CHECK')",ctx),true);
  await vm.runInContext("rpc('saveJob',{id:'a',version:3,reqId:'1234567890123456',date:'2026-10-10',start:'08:00',end:'09:00',input:20,rejection:1,production:19,pallets:0,remarks:'TEST ONLY',destination:''})",ctx);
  const call=calls.at(-1);assert.ok(call.url.endsWith('/rpc/planning_direct_mutate'));assert.equal(call.options.headers.Authorization,'Bearer token');assert.equal(JSON.parse(call.options.body).p_expected,3);
  await assert.rejects(vm.runInContext("rpc('saveJob',{date:'2026-10-10',start:'08:00',end:'09:00',input:1,rejection:2,production:1,pallets:0})",ctx),/exceed input/);
