@@ -275,7 +275,7 @@ if(filtered.length>100)$('jobcards').append(el('p','muted','Showing the first 10
 
 function edit(j){selected=j;jobBaseVersion=j.version;window.extReq=crypto.randomUUID();const locked=j.autoProcess||st(j)==='submitted';$('joberror').classList.add('hidden');$('jobdetail').textContent=`${j['WO No']} · JC ${j['JC No']} · ${j.Customer} · ${proc(j)}`;
 
-const f=$('jobform'),values={date:iso(j['Production Date'])||boot.today,start:time(j['Start Time']),end:time(j['End Time']),input:j['Input Qty']||'',rejection:j['Rej Qty']||'0',production:j['Production Qty']||'',pallets:j['No of Pallets']||'0',destination:(j.Destination||j.nextProc||''),remarks:j.Remarks};
+const f=$('jobform'),values={date:iso(j['Production Date'])||boot.today,start:time(j['Start Time']),end:time(j['End Time']),input:j['Input Qty']||'',rejection:j['Rej Qty']||'0',production:j['Production Qty']||'',pallets:j['No of Pallets']||'0',destination:(j.nextProc||''),remarks:j.Remarks};
 
 for(const [k,v] of Object.entries(values)){f.elements[k].value=v;f.elements[k].disabled=locked}recalcInput();ovr=false;$('jobsave').textContent='✔ Save entry';$('jobsave').classList.toggle('hidden',locked);$('ovrbtn').classList.toggle('hidden',j.autoProcess||!locked);ext=false;$('extbtn').classList.toggle('hidden',j.autoProcess||!(locked||st(j)==='partial'));$('jobdialog').showModal();histPush();if(!j.autoProcess)applyDraft(j);else{$('joberror').textContent='Automatic process: pichhle step se entry aayegi. Operator Save/Extend/Override nahi karega.';$('joberror').classList.remove('hidden')}}
 
@@ -385,7 +385,7 @@ function saveJobDraft(){if(!selected||selected.autoProcess||!$('jobdialog').open
 
 $('jobform').addEventListener('input',saveJobDraft);$('jobform').addEventListener('change',saveJobDraft);
 
-function applyDraft(j){const d=dGet(JD);if(!d||d.id!==j['Row ID']||Date.now()-d.t>12*3600000)return;if(d.mode==='ovr')$('ovrbtn').click();else if(d.mode==='ext')$('extbtn').click();if(d.reqId)window.extReq=d.reqId;jobBaseVersion=d.version??null;const f=$('jobform');for(const [k,val] of Object.entries(d.v||{})){if(f.elements[k]&&!f.elements[k].disabled)f.elements[k].value=val}recalcInput();$('joberror').textContent='Pichhli adhoori entry wapas bhar di gayi hai. Check karke Save karein.';$('joberror').classList.remove('hidden')}
+function applyDraft(j){const d=dGet(JD);if(!d||d.id!==j['Row ID']||Date.now()-d.t>12*3600000)return;if(d.mode==='ovr')$('ovrbtn').click();else if(d.mode==='ext')$('extbtn').click();if(d.reqId)window.extReq=d.reqId;jobBaseVersion=d.version??null;const f=$('jobform');for(const [k,val] of Object.entries(d.v||{})){if(k!=='destination'&&f.elements[k]&&!f.elements[k].disabled)f.elements[k].value=val}recalcInput();$('joberror').textContent='Pichhli adhoori entry wapas bhar di gayi hai. Check karke Save karein.';$('joberror').classList.remove('hidden')}
 
 function restoreDraft(){if(draftDone)return;draftDone=true;const d=dGet(JD);if(!d||Date.now()-d.t>12*3600000)return;const j=jobs.find(x=>x['Row ID']===d.id);if(j&&!j.autoProcess&&!$('jobdialog').open)edit(j)}
 
