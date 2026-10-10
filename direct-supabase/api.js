@@ -25,9 +25,9 @@ function stageOf_(p){p=String(p||'').toUpperCase();if(/CORRUGAT|BOARDLINE/.test(
 async function listJobs(){
  const rows=await all_('production_planning_test','order=source_row.asc,row_id.asc');
  const done=j=>String(j['Input Qty']??'').trim()!==''||['submitted','partial','skipped'].includes(String(j['ERP Status']).toLowerCase())||String(j['Job Status']).toLowerCase()==='closed';
- const min={},route={};for(const r of rows){const j=r.data,w=j['WO No'],s=stageOf_(j['Process Name']);(route[w]=route[w]||[]).push({s,p:j['Process Name']});if(!done(j))min[w]=Math.min(min[w]||99,s);}
- const today=Utilities.formatDate(new Date(),CONFIG.tz,'yyyy-MM-dd');const cutoff=Date.parse(today+'T00:00:00Z')-14*86400000;
- return rows.map(r=>{const j=r.data,s=stageOf_(j['Process Name']),w=j['WO No'];const next=(route[w]||[]).filter(x=>x.s>s).sort((a,b)=>a.s-b.s)[0];return {...j,version:String(r.revision),ready:!done(j)&&s===min[w],stage:s,nextProc:next?next.p:''};}).filter(j=>!(['submitted','skipped'].includes(String(j['ERP Status']).toLowerCase())||String(j['Job Status']).toLowerCase()==='closed')||Math.max(dateMs_(j.Date),dateMs_(j['Production Date']))>=cutoff);
+ const min={},route={};for(const r of rows){if(r.erp_closed)continue;const j=r.data,w=j['WO No'],s=stageOf_(j['Process Name']);(route[w]=route[w]||[]).push({s,p:j['Process Name']});if(!done(j))min[w]=Math.min(min[w]||99,s);}
+ const today=Utilities.formatDate(new Date(),CONFIG.tz,'yyyy-MM-dd');const cutoff=monthCutoff_(today);
+ return rows.filter(r=>!r.erp_closed&&String(r.data['Job Status']||'').toLowerCase()!=='closed'&&String(r.data['ERP Closed']||'').toLowerCase()!=='true'&&Math.max(dateMs_(r.data.Date),dateMs_(r.data['Production Date']))>=cutoff).map(r=>{const j=r.data,s=stageOf_(j['Process Name']),w=j['WO No'];const next=(route[w]||[]).filter(x=>x.s>s).sort((a,b)=>a.s-b.s)[0];return {...j,version:String(r.revision),ready:!done(j)&&s===min[w],stage:s,nextProc:next?next.p:''};});
 }
 function dateMs_(s){s=String(s||'');let m;if((m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/)))return Date.UTC(+m[1],+m[2]-1,+m[3]);if((m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/)))return Date.UTC(+m[3],+m[2]-1,+m[1]);if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))return Date.UTC(+m[3],+m[1]-1,+m[2]);return 0;}
 function number_(v,label,integer){if(v===''||v==null||!Number.isFinite(Number(v))||Number(v)<0||(integer&&!Number.isInteger(Number(v))))throw Error('Enter valid '+label);return Number(v);}
@@ -38,3 +38,5 @@ function mutate_(action,id,version,data,request){if(!/^[a-zA-Z0-9-]{16,64}$/.tes
 function jobPatch_(p){minutes_(p.start);minutes_(p.end);const input=number_(p.input,'Input',true),rej=number_(p.rejection,'Rejection',true),prod=number_(p.production,'Production',true);if(rej>input)throw Error('Rejection cannot exceed input');return {'Start Time':p.start,'End Time':p.end,'Input Qty':input,'Rej Qty':rej,'Production Qty':prod,'Production Date':date_(p.date),'Remarks':text_(p.remarks),'Destination':text_(p.destination),'No of Pallets':number_(p.pallets,'Pallets',false)};}
 function saveJob(p){return mutate_(p.override==='1'?'override':'save',p.id,p.version,jobPatch_(p),p.reqId);}
 function extendJob(p){const patch=jobPatch_(p);if(patch['Production Qty']<=0)throw Error('Production must exceed zero');return mutate_('extend',p.id,p.version,patch,p.reqId);}
+
+function monthCutoff_(today){const [y,m,d]=today.split('-').map(Number);const last=new Date(Date.UTC(y,m-1,0)).getUTCDate();return Date.UTC(y,m-2,Math.min(d,last));}
