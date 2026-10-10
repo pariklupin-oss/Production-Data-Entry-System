@@ -17,3 +17,6 @@ The job list retains recent closed records for one calendar month, excluding clo
 Browser syntax and fake-REST adapter tests do not replace SQL execution and authenticated end-to-end tests. Database installation has not been performed by this change.
 
 ERP intake/status worker must set erp_closed=true for every row belonging to a closed ERP Work Order or Job Card, and increment revision atomically. It must refresh statuses before mobile rollout; defaults are not proof of ERP open status. Closed records remain in SQL. Pending older jobs are outside the new one-month mobile window.
+
+## Verified setup on 10 October 2026
+Staged access SQL was applied in axgyeppfrcmhwrpxztvv with owner approval. SQL verification confirms RLS enabled, anonymous mutation denied and direct authenticated UPDATE denied. Two owner-approved test memberships are enabled: one admin and one operator. The owner-provided publishable key is configured. Browser login/save end-to-end verification and ERP adapters remain pending. This folder may be published as a separate test route; the root live app is unchanged.
