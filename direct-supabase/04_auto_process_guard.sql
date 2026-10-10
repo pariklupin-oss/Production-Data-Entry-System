@@ -1,20 +1,5 @@
--- STAGED: correct project axgyeppfrcmhwrpxztvv ONLY. Requires existing test table/RPC.
--- No live objects or ERP watcher are changed. No operator is enabled automatically.
+-- TEST ONLY. Replaces existing wrapper to deny operator writes to automatic steps.
 begin;
-alter table public.production_planning_test add column if not exists erp_closed boolean not null default false;
-create table if not exists public.planning_direct_members (
- user_id uuid primary key references auth.users(id) on delete cascade,
- enabled boolean not null default false,
- role text not null default 'operator' check(role in ('operator','admin'))
-);
-alter table public.planning_direct_members enable row level security;
-revoke all on public.planning_direct_members from anon,authenticated;
-grant select on public.planning_direct_members to authenticated;
-create policy planning_member_self on public.planning_direct_members for select to authenticated using(user_id=auth.uid());
-alter table public.production_planning_test enable row level security;
-revoke all on public.production_planning_test from anon,authenticated;
-grant select on public.production_planning_test to authenticated;
-create policy planning_direct_read on public.production_planning_test for select to authenticated using(exists(select 1 from public.planning_direct_members m where m.user_id=auth.uid() and m.enabled));
 create or replace function public.planning_direct_mutate(p_action text,p_id text,p_expected bigint,p_data jsonb,p_request text)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare access_role text; k text; v numeric; result jsonb; entry_date date;
@@ -49,10 +34,4 @@ begin
  result=public.production_test_mutate(p_action,p_id,p_expected,p_data,auth.uid()::text||':'||p_request);
  return result;
 end $$;
-revoke all on function public.planning_direct_mutate(text,text,bigint,jsonb,text) from public,anon;
-grant execute on function public.planning_direct_mutate(text,text,bigint,jsonb,text) to authenticated;
 commit;
--- After creating a TEST login via Supabase Authentication, enable only that user:
--- insert into public.planning_direct_members(user_id,enabled,role)
--- select id,true,'admin' from auth.users where email='pariklupin@gmail.com'
--- on conflict(user_id) do update set enabled=true,role='admin';
