@@ -12,6 +12,8 @@ Live root index.html and the floor ERP watcher are unchanged.
 5. Test login rejection, two-operator revision conflict, retry after lost response, Extend, reload draft recovery, logout and separate-account drafts. Verify SQL rows independently.
 
 Only Production Planning is enabled. Boardline/Production reports remain disabled pending their server validation. SQL API grants no report writes. Existing test records and TEST ONLY remarks must stay out of live ERP.
-The job list retains recent closed records for 15 calendar days, plus older open/pending jobs. Historical SQL rows are not deleted. A fresh last-15-day import/delta and ERP SQL worker are still required before cutover.
+The job list retains recent closed records for one calendar month, excluding closed jobs. Historical SQL rows are not deleted. A fresh last-month import/delta and ERP SQL worker are still required before cutover.
 
 Browser syntax and fake-REST adapter tests do not replace SQL execution and authenticated end-to-end tests. Database installation has not been performed by this change.
+
+ERP intake/status worker must set erp_closed=true for every row belonging to a closed ERP Work Order or Job Card, and increment revision atomically. It must refresh statuses before mobile rollout; defaults are not proof of ERP open status. Closed records remain in SQL. Pending older jobs are outside the new one-month mobile window.
