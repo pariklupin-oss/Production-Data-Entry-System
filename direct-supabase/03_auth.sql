@@ -1,6 +1,7 @@
 -- STAGED: correct project axgyeppfrcmhwrpxztvv ONLY. Requires existing test table/RPC.
 -- No live objects or ERP watcher are changed. No operator is enabled automatically.
 begin;
+alter table public.production_planning_test add column if not exists erp_closed boolean not null default false;
 create table if not exists public.planning_direct_members (
  user_id uuid primary key references auth.users(id) on delete cascade,
  enabled boolean not null default false,
@@ -42,6 +43,8 @@ begin
  foreach k in array array['Remarks','Destination'] loop
   if jsonb_typeof(p_data->k)<>'string' or length(p_data->>k)>1000 then raise exception 'Invalid text'; end if;
  end loop;
+ perform 1 from public.production_planning_test where row_id=p_id for update;
+ if exists(select 1 from public.production_planning_test where row_id=p_id and (erp_closed or lower(data->>'Job Status')='closed')) then raise exception 'Job is closed'; end if;
  result=public.production_test_mutate(p_action,p_id,p_expected,p_data,auth.uid()::text||':'||p_request);
  return result;
 end $$;
