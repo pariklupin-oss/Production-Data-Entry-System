@@ -255,7 +255,7 @@ function render(){const q=$('search').value.toLowerCase(),m=$('machine').value,s
 
 // STAGE-GATING: "Pending" list me sirf wahi jobs jinka pichhla process COMPLETE ho (ready).
 
-const filtered=jobs.filter(j=>{if(j.autoProcess&&st(j)!=='submitted')return false;if(m&&proc(j)!==m)return false;if(!JSON.stringify(j).toLowerCase().includes(q))return false;if(state!=='all'&&st(j)!==state)return false;if(state==='pending'&&j.ready===false)return false;return true});
+const filtered=jobs.filter(j=>{if(j.autoProcess&&state==='pending')return false;if(m&&proc(j)!==m)return false;if(!JSON.stringify(j).toLowerCase().includes(q))return false;if(state!=='all'&&st(j)!==state)return false;if(state==='pending'&&j.ready===false)return false;return true});
 
 const waiting=jobs.filter(j=>!j.autoProcess&&(!m||proc(j)===m)&&st(j)==='pending'&&j.ready===false).length;
 
