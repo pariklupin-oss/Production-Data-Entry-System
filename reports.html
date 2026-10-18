@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Starish Production Reports</title>
+<script async src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2632;--mute:#66727f;--line:#dfe4ea;--head:#14532d;--acc:#16a34a;--chip:#eef2f6;
+--ok:#166534;--okb:#dcfce7;--bad:#991b1b;--badb:#fee2e2;--warn:#92400e;--warnb:#fef3c7;--th:#f1f5f9}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1419;--card:#18202a;--ink:#e6edf3;--mute:#9aa7b4;--line:#2b3644;--chip:#222c38;
+--okb:#14351f;--ok:#86efac;--badb:#3b1515;--bad:#fca5a5;--warnb:#3a2a0d;--warn:#fcd34d;--th:#1f2934}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Roboto,Arial}
+header{background:var(--head);color:#fff;padding:10px 16px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;margin-right:auto}
+header label{font-size:12px;display:flex;flex-direction:column;gap:2px;opacity:.95}
+header input{font:inherit;padding:4px 6px;border-radius:6px;border:0}
+.btn{font:inherit;border:0;border-radius:7px;padding:7px 13px;cursor:pointer;background:var(--acc);color:#fff;white-space:nowrap}
+.btn.l{background:#ffffff22;border:1px solid #ffffff66}
+.btn.g{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+nav{display:flex;gap:6px;overflow-x:auto;padding:10px 16px 0;max-width:1400px;margin:0 auto}
+nav button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px 8px 0 0;padding:8px 13px;cursor:pointer;white-space:nowrap}
+nav button.on{background:var(--head);color:#fff;border-color:var(--head)}
+nav .n{font-size:11px;background:#0002;border-radius:99px;padding:0 6px;margin-left:5px}
+main{max-width:1400px;margin:0 auto;padding:0 16px 50px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:0 10px 10px 10px;padding:14px}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.tools input,.tools select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+.tools input[type=search]{flex:1;min-width:180px}
+.note{color:var(--mute);font-size:12.5px;margin:4px 0 10px}
+.kpis{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.kpi{background:var(--chip);border-radius:9px;padding:8px 12px;min-width:120px}
+.kpi b{display:block;font-size:19px}.kpi span{font-size:12px;color:var(--mute)}
+h3{font-size:14px;margin:14px 0 6px}
+.tw{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:12.8px}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{background:var(--th);position:sticky;top:0;cursor:pointer;user-select:none;z-index:1}
+td.n,th.n{text-align:right}
+tr:hover td{background:#16a34a12}
+.tag{padding:1px 7px;border-radius:99px;font-size:11.5px;background:var(--chip)}
+.t-ok{background:var(--okb);color:var(--ok)}.t-bad{background:var(--badb);color:var(--bad)}.t-warn{background:var(--warnb);color:var(--warn)}
+#login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
+#login input{width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;margin:8px 0 12px;background:var(--card);color:var(--ink)}
+#msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:9px 15px;border-radius:8px;display:none;z-index:9;max-width:90vw}
+.loading{padding:40px;text-align:center;color:var(--mute)}
+@media (max-width:640px){header h1{width:100%}}
+</style>
+</head>
+<body>
+<div id="login" style="display:none">
+  <h2 style="margin-top:0">Starish Production Reports</h2>
+  <div class="note">Enter the report key (ask your manager).</div>
+  <input id="keyin" type="password" placeholder="Report key" autocomplete="current-password">
+  <button class="btn" onclick="doLogin()">Open</button>
+</div>
+<div id="app" style="display:none">
+<header>
+  <h1>📊 Starish Production Reports</h1>
+  <label>From<input type="date" id="dfrom"></label>
+  <label>To<input type="date" id="dto"></label>
+  <button class="btn l" onclick="loadData()">⟳ Load</button>
+  <button class="btn l" onclick="exportAll()">⬇ All reports (Excel)</button>
+  <span id="stamp" style="font-size:12px;opacity:.85;width:100%;text-align:right"></span>
+</header>
+<nav id="tabs"></nav>
+<main><div class="panel" id="panel"><div class="loading">Loading…</div></div></main>
+</div>
+<div id="msg"></div>
+<script>
+const SB_URL='https://axgyeppfrcmhwrpxztvv.supabase.co';
+const SB_KEY='sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT';
+let KEY='',DATA=null,ROWS=[],REPS=[],CUR='pending',SORT={},BUILT={};
+const $=id=>document.getElementById(id);
+function msg(t,bad){const m=$('msg');m.textContent=t;m.style.background=bad?'#991b1b':'#111';m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',4500)}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function dmy(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})/);return m?`${m[3]}-${m[2]}-${m[1]}`:(s||'')}
+function pd(s){s=String(s||'').trim();let m;
+ if(m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/))return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+ if(m=s.match(/^(\d{4})-(\d{2})-(\d{2})/))return `${m[1]}-${m[2]}-${m[3]}`;
+ if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;return ''}
+function num(v){const n=parseFloat(String(v??'').replace(/,/g,''));return isNaN(n)?0:n}
+function days(a,b){if(!a)return '';return Math.max(0,Math.round((new Date(b)-new Date(a))/864e5))}
+function mins(t){const m=String(t||'').match(/^(\d{1,2}):(\d{2})/);return m?(+m[1])*60+(+m[2]):null}
+const ST=r=>String(r['ERP Status']||'').trim();
+const stl=r=>ST(r).toLowerCase();
+const isExt=r=>/\[EXTEND of|\[SRC:/i.test(r.Remarks||'');
+const hasQty=r=>num(r['Production Qty'])>0;
+const isDone=r=>['submitted','partial','override','skipped'].includes(stl(r))||hasQty(r);
+const effDate=r=>pd(r['Production Date'])||pd(r.Date);
+const TODAY=iso(new Date());
+
+async function rpc(fn,body){const ctl=new AbortController(),t=setTimeout(()=>ctl.abort(),45000);
+ try{const r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',signal:ctl.signal,headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const tx=await r.text();let j=null;try{j=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw Error((j&&(j.message||j.hint))||('Server error '+r.status));return j}
+ catch(e){if(e.name==='AbortError')throw Error('Slow internet — please click Load again');if(e instanceof TypeError)throw Error('Could not connect to the server. Check the internet connection.');throw e}finally{clearTimeout(t)}}
+
+function start(){const u=new URL(location.href);const k=u.searchParams.get('key');
+ if(k){KEY=k;try{localStorage.setItem('pv3repkey',k)}catch(e){}}else{try{KEY=localStorage.getItem('pv3repkey')||''}catch(e){}}
+ const f=new Date();f.setDate(f.getDate()-6);
+ let fr=iso(f),to=TODAY;try{const s=JSON.parse(sessionStorage.getItem('pv3rng')||'null');if(s){fr=s[0];to=s[1]}}catch(e){}
+ $('dfrom').value=fr;$('dto').value=to;
+ if(!KEY){$('login').style.display='block';return}
+ $('app').style.display='block';loadData()}
+function doLogin(){KEY=$('keyin').value.trim();if(!KEY)return;try{localStorage.setItem('pv3repkey',KEY)}catch(e){}
+ $('login').style.display='none';$('app').style.display='block';loadData()}
+async function loadData(){const fr=$('dfrom').value,to=$('dto').value;if(!fr||!to){msg('Please select both dates',1);return}
+ try{sessionStorage.setItem('pv3rng',JSON.stringify([fr,to]))}catch(e){}
+ $('panel').innerHTML='<div class="loading">Loading data…</div>';
+ try{DATA=await rpc('pv3_report_data',{p_key:KEY,p_from:fr,p_to:to})}
+ catch(e){if(/key/i.test(e.message)){try{localStorage.removeItem('pv3repkey')}catch(_){};$('app').style.display='none';$('login').style.display='block';msg(e.message,1);return}
+  $('panel').innerHTML=`<div class="loading">${esc(e.message)}</div>`;return}
+ ROWS=(DATA.jobs||[]).map(x=>Object.assign({},x.d,{_id:x.id,_closed:x.closed,_upd:x.upd}));
+ REPS=DATA.reports||[];
+ const at=new Date(DATA.at);$('stamp').textContent=`Data: ${at.toLocaleString('en-IN')}  ·  ${ROWS.length} rows  ·  ${dmy(fr)} to ${dmy(to)}`;
+ BUILT={};prepare();drawTabs();show(CUR)}
+
+// ---------- WO groups ----------
+let WO={};
+function prepare(){WO={};for(const r of ROWS){const k=r['WO No']||'?';(WO[k]=WO[k]||[]).push(r)}
+ for(const k in WO)WO[k].sort((a,b)=>num(a['Route Sequence'])-num(b['Route Sequence']))}
+function woOpen(k){const l=WO[k]||[];return l.some(r=>!r._closed)&&l.some(r=>!isExt(r)&&!isDone(r))}
+function ppQty(r){return (WO[r['WO No']]||[]).filter(x=>x['PP Code']===r['PP Code']).reduce((s,x)=>s+num(x['Production Qty']),0)}
+function ppRej(r){return (WO[r['WO No']]||[]).filter(x=>x['PP Code']===r['PP Code']).reduce((s,x)=>s+num(x['Rej Qty']),0)}
+function inRange(d){return d&&d>=$('dfrom').value&&d<=$('dto').value}
+
+// ---------- REPORTS ----------
+const R={};
+R.pending={name:'Pending Jobs',build(){
+ const det=[];
+ for(const k in WO){if(!woOpen(k))continue;const l=WO[k];
+  for(const r of l){if(isExt(r)||isDone(r)||r._closed)continue;
+   const prev=l.filter(x=>!isExt(x)&&num(x['Route Sequence'])<num(r['Route Sequence']));
+   const ready=prev.every(isDone);
+   det.push([dmy(pd(r.Date)),r['WO No'],r['JC No'],r.Customer,r['Model Name']||r['Item Code'],r['PP Code'],r['Process Name'],r['Machine Name'],num(r['Plan Qty']),
+    ready?'Ready':'Waiting',days(pd(r.Date),TODAY)])}}
+ det.sort((a,b)=>(b[9]==='Ready')-(a[9]==='Ready')||String(a[6]).localeCompare(b[6])||String(a[1]).localeCompare(b[1]));
+ const sm={};for(const d of det){const k=d[6]+'|'+d[7];const s=sm[k]=sm[k]||[d[6],d[7],0,0,0,0];s[2]++;if(d[9]==='Ready'){s[3]++;s[4]+=d[8]}s[5]+=d[8]}
+ return {note:'All pending processes of OPEN jobs (not limited by the date range). Ready = previous processes are done, work can start on this machine. Waiting = an earlier process is still pending.',
+  kpis:[['Pending processes',det.length],['Ready',det.filter(d=>d[9]==='Ready').length],['Waiting',det.filter(d=>d[9]!=='Ready').length],['Jobs (WO)',new Set(det.map(d=>d[1])).size]],
+  sum:{title:'By process / machine',cols:['Process','Machine','Pending','Ready','Ready Plan Qty','Total Plan Qty'],rows:Object.values(sm).sort((a,b)=>b[3]-a[3])},
+  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','PP Code','Process','Machine','Plan Qty','Status','Days'],rows:det}}}};
+R.wip={name:'WIP (Job wise)',build(){
+ const det=[];
+ for(const k in WO){if(!woOpen(k))continue;const l=WO[k].filter(r=>!isExt(r));if(!l.length)continue;
+  const done=l.filter(isDone),pend=l.filter(r=>!isDone(r));const last=done[done.length-1],next=pend[0];const f=l[0];
+  det.push([k,f['JC No'],f.Customer,f['Model Name']||f['Item Code'],dmy(pd(f.Date)),Math.max(...l.map(r=>num(r['Plan Qty']))),
+   `${done.length}/${l.length}`,last?last['Process Name']:'—',last?ppQty(last):'',next?next['Process Name']:'',next?next['Machine Name']:'',days(pd(f.Date),TODAY)])}
+ det.sort((a,b)=>num(b[11])-num(a[11]));
+ const sm={};for(const d of det){const s=sm[d[9]]=sm[d[9]]||[d[9],0,0];s[1]++;s[2]+=num(d[8])}
+ return {note:'How far each open job card has progressed (not limited by the date range). Last qty = total production of the last completed process.',
+  kpis:[['Open jobs',det.length],['Older than 10 days',det.filter(d=>d[11]>=10).length]],
+  sum:{title:'By next process (where jobs are waiting)',cols:['Next process','Jobs','Last stage qty'],rows:Object.values(sm).sort((a,b)=>b[1]-a[1])},
+  det:{title:'By job',cols:['WO No','JC','Customer','Item','Plan Date','Plan Qty','Processes done','Last process','Last qty','Next process','Next machine','Days'],rows:det}}}};
+R.pva={name:'Plan vs Actual',build(){
+ const det=[];
+ for(const r of ROWS){if(isExt(r))continue;const d=pd(r.Date);if(!inRange(d))continue;const a=ppQty(r),p=num(r['Plan Qty']);
+  det.push([dmy(d),r['WO No'],r['JC No'],r.Customer,r['Process Name'],r['Machine Name'],p,a,ppRej(r),p-a,p?Math.round(a/p*100):'',isDone(r)?'Done':'Pending',ST(r)])}
+ det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[4]).localeCompare(b[4]));
+ const sm={};for(const d of det){const k=d[0]+'|'+d[4];const s=sm[k]=sm[k]||[d[0],d[4],0,0,0,0];s[2]++;if(d[11]==='Done')s[3]++;s[4]+=d[6];s[5]+=d[7]}
+ const srows=Object.values(sm).map(s=>[...s,s[4]?Math.round(s[5]/s[4]*100):'']).sort((a,b)=>pd(a[0]).localeCompare(pd(b[0])));
+ const P=det.reduce((s,d)=>s+d[6],0),A=det.reduce((s,d)=>s+d[7],0);
+ return {note:'Jobs PLANNED in the selected date range: plan vs production so far (all lots added).',
+  kpis:[['Planned processes',det.length],['Done',det.filter(d=>d[11]==='Done').length],['Plan qty',P],['Actual qty',A],['Achievement %',P?Math.round(A/P*100)+'%':'—']],
+  sum:{title:'Date × Process',cols:['Plan Date','Process','Jobs','Done','Plan Qty','Actual Qty','%'],rows:srows},
+  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Process','Machine','Plan Qty','Actual Qty','Rej','Balance','%','Status','ERP Status'],rows:det}}}};
+R.entries={name:'Production Entries',build(){
+ const det=[];
+ for(const r of ROWS){if(!hasQty(r))continue;const d=effDate(r);if(!inRange(d))continue;
+  det.push([dmy(d),r['Start Time'],r['End Time'],r['WO No'],r['JC No'],r.Customer,r['Process Name'],r['Machine Name'],num(r['Input Qty']),num(r['Production Qty']),num(r['Rej Qty']),isExt(r)?'Extend lot':'Normal',ST(r)])}
+ det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[7]).localeCompare(b[7])||String(a[1]).localeCompare(b[1]));
+ const sm={};for(const d of det){const k=d[0]+'|'+d[7];const s=sm[k]=sm[k]||[d[0],d[7],0,0,0];s[2]++;s[3]+=d[9];s[4]+=d[10]}
+ return {note:'All entries made in the selected date range (by Production Date).',
+  kpis:[['Entries',det.length],['Production qty',det.reduce((s,d)=>s+d[9],0)],['Rejection',det.reduce((s,d)=>s+d[10],0)],['Posted to ERP',det.filter(d=>/submitted|partial/i.test(d[12])).length]],
+  sum:{title:'Date × Machine',cols:['Date','Machine','Entries','Production Qty','Rej Qty'],rows:Object.values(sm)},
+  det:{title:'Detail',cols:['Prod Date','Start','End','WO No','JC','Customer','Process','Machine','Input','Production','Rej','Lot','ERP Status'],rows:det}}}};
+R.extend={name:'Extend Jobs',build(){
+ const det=[];
+ for(const r of ROWS){if(!isExt(r))continue;const d=effDate(r);if(!inRange(d)&&/^(submitted|partial|skipped)$/.test(stl(r)))continue;
+  const lots=(WO[r['WO No']]||[]).filter(x=>x['PP Code']===r['PP Code']&&hasQty(x));
+  det.push([dmy(d),r['WO No'],r['JC No'],r.Customer,r['PP Code'],r['Process Name'],r['Machine Name'],num(r['Production Qty']),num(r['Rej Qty']),r['Start Time'],r['End Time'],lots.length,ppQty(r),/\[SRC:/.test(r.Remarks||'')?'Auto (Strapping/OQC)':'App Extend',ST(r),r.Remarks||''])}
+ det.sort((a,b)=>pd(b[0]).localeCompare(pd(a[0])));
+ const sm={};for(const d of det){const s=sm[d[5]]=sm[d[5]]||[d[5],0,0];s[1]++;s[2]+=d[7]}
+ return {note:'Partial lot (extend) entries — in the selected date range, plus any still pending in ERP.',
+  kpis:[['Extend lots',det.length],['WO',new Set(det.map(d=>d[1])).size],['ERP pending',det.filter(d=>!/submitted|partial/i.test(d[14])).length]],
+  sum:{title:'By process',cols:['Process','Extend lots','Qty'],rows:Object.values(sm)},
+  det:{title:'Detail',cols:['Prod Date','WO No','JC','Customer','PP Code','Process','Machine','Lot Qty','Rej','Start','End','Total lots','PP total qty','Source','ERP Status','Remarks'],rows:det}}}};
+R.check={name:'Check ERP / Attention',build(){
+ const det=[];const old=Date.now()-2*3600e3;
+ for(const r of ROWS){const s=stl(r);let k='';
+  if(s==='check erp')k='CHECK ERP';else if(s==='error')k='ERROR';else if(s==='override')k='OVERRIDE (ERP pending)';
+  else if((s===''||s==='pending')&&hasQty(r)&&new Date(r._upd).getTime()<old)k='Not posted to ERP for 2+ hours';
+  if(!k)continue;
+  det.push([k,dmy(effDate(r)),r['WO No'],r['JC No'],r.Customer,r['PP Code'],r['Process Name'],r['Machine Name'],num(r['Production Qty']),num(r['Rej Qty']),r['Start Time'],r['End Time'],r.Remarks||''])}
+ const sm={};for(const d of det){const s=sm[d[0]]=sm[d[0]]||[d[0],0];s[1]++}
+ return {note:'Needs attention: Check ERP / Error / Override pending / saved but not posted to ERP for 2+ hours. To correct: App → Status tab → Manager.',
+  kpis:Object.values(sm).map(s=>[s[0],s[1]]).concat([['Total',det.length]]),
+  sum:{title:'By type',cols:['Type','Rows'],rows:Object.values(sm)},
+  det:{title:'Detail',cols:['Type','Prod Date','WO No','JC','Customer','PP Code','Process','Machine','Prod','Rej','Start','End','Remarks'],rows:det}}}};
+R.shift={name:'Shift Reports',build(){
+ const b=[],p=[];
+ for(const x of REPS){const d=x.d||{};const s=mins(d.START_TIME),e=mins(d.END_TIME);const tot=s!=null&&e!=null?(e-s+1440)%1440:0;
+  const bd=num(d.BREAKDOWN_MIN),run=tot>bd?(tot-bd)/60:0;const rs=(d.BD||[]).map(z=>z.r).filter(Boolean).join(', ');
+  if(x.kind==='BOARDLINE'){const m=num(d.METER);b.push([dmy(x.date),d.SHIFT,d.START_TIME,d.END_TIME,num(d.TONNAGE),m,+(tot/60).toFixed(2),+run.toFixed(2),run?Math.round(m/run):0,run?+(m/run/60).toFixed(1):0,bd,rs,d.REMARK||''])}
+  else{const q=num(d.PRODUCTION_QTY);p.push([dmy(x.date),d.SHIFT,d.MACHINE_NAME,d.START_TIME,d.END_TIME,num(d.NO_OF_JOBS),q,num(d.COLOUR_CHANGES),+(tot/60).toFixed(2),+run.toFixed(2),run?Math.round(q/run):0,bd,rs,d.REMARK||''])}}
+ return {note:'Boardline / Production shift reports entered in the app (selected date range).',
+  kpis:[['Boardline shifts',b.length],['Meter',b.reduce((s,r)=>s+r[5],0)],['Tonnage',+b.reduce((s,r)=>s+r[4],0).toFixed(2)],['Production shifts',p.length],['Production qty',p.reduce((s,r)=>s+r[6],0)]],
+  sum:{title:'BOARDLINE',cols:['Date','Shift','Start','End','Tonnage','Meter','Total Hrs','Running Hrs','Speed (m/hr)','Speed/min','Breakdown min','Reason','Remark'],rows:b},
+  det:{title:'PRODUCTION (machines)',cols:['Date','Shift','Machine','Start','End','Jobs','Production Qty','Colour change','Total Hrs','Running Hrs','Speed/hr','Breakdown min','Reason','Remark'],rows:p}}}};
+R.all={name:'All Data',build(){
+ const cols=['Date','WO No','JC No','Customer','Model Name','Item Code','PP Code','Route Sequence','Process Name','Machine Name','Plan Qty','UPS','Production Date','Start Time','End Time','Input Qty','Rej Qty','Production Qty','ERP Status','Job Status','Destination','No of Pallets','Remarks'];
+ const det=ROWS.map(r=>cols.map(c=>/Qty|UPS|Route/.test(c)?(r[c]===''||r[c]==null?'':num(r[c])):(r[c]??'')));
+ return {note:'All loaded data (selected range + all open jobs). Use search to find anything.',kpis:[['Rows',det.length]],
+  sum:null,det:{title:'All rows',cols:cols,rows:det}}}};
+
+const ORDER=['pending','wip','pva','entries','extend','check','shift','all'];
+function get(id){if(!BUILT[id])BUILT[id]=R[id].build();return BUILT[id]}
+function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:get(id).det.rows.length;
+ return `<button id="tb_${id}" class="${id===CUR?'on':''}" onclick="show('${id}')">${esc(R[id].name)}<span class="n">${n}</span></button>`}).join('')}
+const NUMC=/Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Entries|Job$|Jobs|^Pending$|^Ready$|lots|Lots|Hrs|Speed|Meter|Tonnage|min|Rows|Done/;
+function filt(id,t){const q=($('q')?.value||'').toLowerCase().trim(),f1=$('f1')?.value||'';
+ const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');
+ return t.rows.filter(r=>(!q||r.join(' ').toLowerCase().includes(q))&&(!f1||r[pi]===f1||r[mi]===f1))}
+function table(t,key,rows){const s=SORT[key];if(s){rows=[...rows].sort((a,b)=>{const x=a[s.i],y=b[s.i];const nx=typeof x==='number'&&typeof y==='number';
+  const dx=pd(x),dy=pd(y);let c=nx?x-y:(dx&&dy?dx.localeCompare(dy):String(x??'').localeCompare(String(y??''),undefined,{numeric:true}));return s.d?-c:c})}
+ const lim=1500,show=rows.slice(0,lim);
+ const tag=v=>{const s=String(v);if(/^(Ready|Done|Submitted|Partial)$/i.test(s))return `<span class="tag t-ok">${esc(s)}</span>`;
+  if(/^(Waiting|Pending)$/i.test(s))return `<span class="tag t-warn">${esc(s)}</span>`;if(/check|error|override|2\+ hours/i.test(s))return `<span class="tag t-bad">${esc(s)}</span>`;return esc(s)};
+ return `<h3>${esc(t.title)} <span class="note">(${rows.length})</span></h3><div class="tw"><table><thead><tr>${t.cols.map((c,i)=>`<th class="${NUMC.test(c)?'n':''}" onclick="srt('${key}',${i})">${esc(c)}${s&&s.i===i?(s.d?' ▼':' ▲'):''}</th>`).join('')}</tr></thead><tbody>
+ ${show.map(r=>'<tr>'+r.map((v,i)=>`<td class="${typeof v==='number'?'n':''}">${typeof v==='number'?v.toLocaleString('en-IN'):(['Status','ERP Status','Type'].includes(t.cols[i])?tag(v):esc(v))}</td>`).join('')+'</tr>').join('')}
+ </tbody></table></div>${rows.length>lim?`<div class="note">Showing first ${lim} rows — Excel has all ${rows.length}.</div>`:''}`}
+function srt(key,i){const s=SORT[key];SORT[key]={i,d:s&&s.i===i?!s.d:false};render()}
+function show(id){CUR=id;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id==='tb_'+id));
+ const r=get(id);const opts=new Set();for(const t of [r.det]){const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');for(const x of t.rows){if(pi>=0&&x[pi])opts.add(x[pi]);if(mi>=0&&x[mi])opts.add(x[mi])}}
+ $('panel').innerHTML=`<div class="tools"><input type="search" id="q" placeholder="Search: WO / JC / customer / process…" oninput="render()">
+ ${opts.size?`<select id="f1" onchange="render()"><option value="">All processes / machines</option>${[...opts].sort().map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:''}
+ <button class="btn" onclick="exportOne('${id}')">⬇ Excel</button></div><div id="body"></div>`;render()}
+function render(){const id=CUR,r=get(id);const det=filt(id,r.det);
+ $('body').innerHTML=`<div class="note">${esc(r.note)}</div><div class="kpis">${r.kpis.map(k=>`<div class="kpi"><b>${typeof k[1]==='number'?k[1].toLocaleString('en-IN'):esc(k[1])}</b><span>${esc(k[0])}</span></div>`).join('')}</div>
+ ${r.sum?table(r.sum,id+'_s',r.sum.rows):''}${table(r.det,id+'_d',det)}`}
+function sheet(t){return XLSX.utils.aoa_to_sheet([t.cols,...t.rows])}
+function fname(x){return `Starish_${x}_${dmy($('dfrom').value)}_to_${dmy($('dto').value)}.xlsx`}
+function exportOne(id){if(!window.XLSX){msg('Excel library did not load — check the internet connection',1);return}
+ const r=get(id),wb=XLSX.utils.book_new();const det={title:r.det.title,cols:r.det.cols,rows:filt(id,r.det)};
+ if(r.sum)XLSX.utils.book_append_sheet(wb,sheet(r.sum),r.sum.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
+ XLSX.utils.book_append_sheet(wb,sheet(det),det.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
+ XLSX.writeFile(wb,fname(R[id].name.replace(/\W+/g,'_')))}
+function exportAll(){if(!window.XLSX){msg('Excel library did not load',1);return}if(!DATA){msg('Please load the data first',1);return}
+ const wb=XLSX.utils.book_new();
+ for(const id of ORDER){const r=get(id),n=R[id].name.replace(/[\\\/\?\*\[\]:]/g,' ');
+  if(id==='shift'){XLSX.utils.book_append_sheet(wb,sheet(r.sum),'Boardline');XLSX.utils.book_append_sheet(wb,sheet(r.det),'Production shift');continue}
+  if(r.sum)XLSX.utils.book_append_sheet(wb,sheet(r.sum),(n+' sum').slice(0,31));XLSX.utils.book_append_sheet(wb,sheet(r.det),n.slice(0,31))}
+ XLSX.writeFile(wb,fname('All_Reports'))}
+start();
+</script>
+</body>
+</html>
