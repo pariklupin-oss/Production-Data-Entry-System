@@ -176,6 +176,38 @@ R.entries={name:'Production Entries',build(){
   kpis:[['Entries',det.length],['Production qty',det.reduce((s,d)=>s+d[9],0)],['Rejection',det.reduce((s,d)=>s+d[10],0)],['Posted to ERP',det.filter(d=>/submitted|partial/i.test(d[12])).length]],
   sum:{title:'Date × Machine',cols:['Date','Machine','Entries','Production Qty','Rej Qty'],rows:Object.values(sm)},
   det:{title:'Detail',cols:['Prod Date','Start','End','WO No','JC','Customer','Process','Machine','Input','Production','Rej','Lot','ERP Status'],rows:det}}}};
+// ---------- Machine shift report ----------
+const SHIFT_DAY_START=8*60, SHIFT_NIGHT_START=18*60+30;      // Day 08:00-18:30, Night 18:30-04:30
+function shiftOf(r){const st=mins(r['Start Time']);const d=effDate(r);if(st==null||!d)return null;
+ if(st>=SHIFT_DAY_START&&st<SHIFT_NIGHT_START)return {date:d,shift:'DAY'};
+ if(st>=SHIFT_NIGHT_START)return {date:d,shift:'NIGHT'};
+ const x=new Date(d+'T00:00:00');x.setDate(x.getDate()-1);return {date:iso(x),shift:'NIGHT'}}   // raat 12 ke baad = pichhle din ki night
+function mGroup(name,proc){const n=String(name||'').toUpperCase(),p=String(proc||'').toUpperCase();
+ if(/PRINT|SLOT/.test(p)||/PRINTER|SLOTTER|JF MACHINE|SMARTECH|NEW MACHINE/.test(n))return '2 COLOR PRINTER SLOTTER';
+ if(/FOLD|GLU/.test(n+p))return 'FOLDER GLUER';
+ if(/^AUTO STITCH/.test(n)||(/STITCH/.test(p)&&/AUTO/.test(n)&&!/SEMI/.test(n)))return 'AUTO STITCHING';
+ if(/CORRUGAT|BOARD|STRAP|BUNDLING M|OUTWARD|QUALITY|OQC/.test(n+' '+p))return null;
+ return n||p||null}
+const GORDER=['2 COLOR PRINTER SLOTTER','FOLDER GLUER','AUTO STITCHING'];
+R.shiftmc={name:'Machine Shift Report',build(){
+ const det=[],sm={};
+ for(const r of ROWS){if(!hasQty(r))continue;const g=mGroup(r['Machine Name'],r['Process Name']);if(!g)continue;const sh=shiftOf(r);if(!sh||!inRange(sh.date))continue;
+  const s=mins(r['Start Time']),e=mins(r['End Time']);const run=s!=null&&e!=null?(e-s+1440)%1440:0;
+  det.push([dmy(sh.date),sh.shift,g,r['Machine Name'],r['WO No'],r['JC No'],r.Customer,r['Process Name'],r['Start Time'],r['End Time'],num(r['Production Qty']),num(r['Rej Qty']),isExt(r)?'Extend lot':'Normal']);
+  const k=sh.date+'|'+sh.shift+'|'+g;const t=sm[k]=sm[k]||{d:sh.date,sh:sh.shift,g,jobs:new Set(),n:0,q:0,rj:0,run:0,cc:null,rq:null,rj2:null};
+  t.jobs.add(r['WO No']+'|'+r['PP Code']);t.n++;t.q+=num(r['Production Qty']);t.rj+=num(r['Rej Qty']);t.run+=run}
+ for(const x of REPS){if(x.kind!=='PRODUCTION')continue;const d=x.d||{};const g=mGroup(d.MACHINE_NAME,'');if(!g)continue;const sh=/N/i.test(String(d.SHIFT||'').slice(0,1))?'NIGHT':'DAY';
+  if(!inRange(x.date))continue;const k=x.date+'|'+sh+'|'+g;const t=sm[k]=sm[k]||{d:x.date,sh,g,jobs:new Set(),n:0,q:0,rj:0,run:0,cc:null,rq:null,rj2:null};
+  t.cc=(t.cc||0)+num(d.COLOUR_CHANGES);t.rq=(t.rq||0)+num(d.PRODUCTION_QTY);t.rj2=(t.rj2||0)+num(d.NO_OF_JOBS)}
+ const go=g=>{const i=GORDER.indexOf(g);return i<0?9:i};
+ const rows=Object.values(sm).sort((a,b)=>a.d.localeCompare(b.d)||(a.sh==='DAY'?0:1)-(b.sh==='DAY'?0:1)||go(a.g)-go(b.g)||a.g.localeCompare(b.g))
+  .map(t=>[dmy(t.d),t.sh,t.g,t.jobs.size,t.n,t.q,t.rj,+(t.run/60).toFixed(2),t.g===GORDER[0]?(t.cc??''):'—',t.rj2??'',t.rq??'']);
+ det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||(a[1]==='DAY'?0:1)-(b[1]==='DAY'?0:1)||go(a[2])-go(b[2])||String(a[8]).localeCompare(String(b[8])));
+ const tot=g=>rows.filter(r=>r[2]===g).reduce((s,r)=>s+r[5],0);
+ return {note:'Shift-wise machine production from job entries. Day = 08:00–18:30, Night = 18:30–04:30 (entries after midnight count in the previous date\'s night shift). Colour changes come from the operator\'s Production shift report (JF Machine, Smartech, New Machine = 2 Color Printer Slotter). Corrugation, Strapping and OQC are not included.',
+  kpis:[['Printer Slotter qty',tot(GORDER[0])],['Folder Gluer qty',tot(GORDER[1])],['Auto Stitching qty',tot(GORDER[2])],['Colour changes',rows.reduce((s,r)=>s+(typeof r[8]==='number'?r[8]:0),0)]],
+  sum:{title:'Date × Shift × Machine',cols:['Date','Shift','Machine','Jobs','Entries','Production Qty','Rej Qty','Run Hrs','Colour changes','Jobs (shift report)','Qty (shift report)'],rows},
+  det:{title:'Entries by shift',cols:['Shift Date','Shift','Machine group','Machine','WO No','JC','Customer','Process','Start','End','Production','Rej','Lot'],rows:det}}}};
 R.extend={name:'Extend Jobs',build(){
  const det=[];
  for(const r of ROWS){if(!isExt(r))continue;const d=effDate(r);if(!inRange(d)&&/^(submitted|partial|skipped)$/.test(stl(r)))continue;
@@ -215,11 +247,11 @@ R.all={name:'All Data',build(){
  return {note:'All loaded data (selected range + all open jobs). Use search to find anything.',kpis:[['Rows',det.length]],
   sum:null,det:{title:'All rows',cols:cols,rows:det}}}};
 
-const ORDER=['pending','wip','pva','entries','extend','check','shift','all'];
+const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','all'];
 function get(id){if(!BUILT[id])BUILT[id]=R[id].build();return BUILT[id]}
 function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:get(id).det.rows.length;
  return `<button id="tb_${id}" class="${id===CUR?'on':''}" onclick="show('${id}')">${esc(R[id].name)}<span class="n">${n}</span></button>`}).join('')}
-const NUMC=/Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Entries|Job$|Jobs|^Pending$|^Ready$|lots|Lots|Hrs|Speed|Meter|Tonnage|min|Rows|Done/;
+const NUMC=/Colour changes|Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Entries|Job$|Jobs|^Pending$|^Ready$|lots|Lots|Hrs|Speed|Meter|Tonnage|min|Rows|Done/;
 function filt(id,t){const q=($('q')?.value||'').toLowerCase().trim(),f1=$('f1')?.value||'';
  const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');
  return t.rows.filter(r=>(!q||r.join(' ').toLowerCase().includes(q))&&(!f1||r[pi]===f1||r[mi]===f1))}
