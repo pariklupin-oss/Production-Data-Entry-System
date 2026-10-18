@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Starish Production</title>
+<meta name="theme-color" content="#0f2043">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  html,body{margin:0;height:100%;overscroll-behavior:none;background:#f3f1fb;font-family:system-ui,sans-serif}
+  iframe{position:fixed;inset:0;width:100%;height:100%;border:0}
+  #msg{padding:40px 20px;text-align:center;color:#1d1b3a}
+</style>
+</head>
+<body>
+<!-- Production V3 Apps Script web app link (ends with /exec) -->
+<script>
+  const APP_URL = "https://script.google.com/macros/s/AKfycbxFzapuOlVVoIiAfqEGfVfDUszmZKeaRiAYKUese6Z-CwT4GP1rwEJP9TJDjirpbL4PSw/exec";
+  const f = document.createElement('iframe');
+  f.src = APP_URL;
+  f.allow = "clipboard-write";
+  f.title = "Starish Production";
+  document.body.appendChild(f);
+</script>
+<noscript><p id="msg">Please enable JavaScript to open Starish Production.</p></noscript>
+<script>
+  // Draft bridge: app ki adhoori entry yahan (GitHub app ke storage me) bhi save hoti hai,
+  // taaki app refresh / band hone par entry wapas aa jaye.
+  window.addEventListener('message', function (e) {
+    var host = ''; try { host = new URL(e.origin).hostname; } catch (x) {}
+    if (!/\.googleusercontent\.com$/.test(host)) return;
+    var d = e.data || {}; if (!d.pv3) return;
+    try {
+      if (d.op === 'set') localStorage.setItem('pv3:' + d.k, JSON.stringify(d.v));
+      else if (d.op === 'del') localStorage.removeItem('pv3:' + d.k);
+      else if (d.op === 'getall') {
+        var o = {};
+        for (var i = 0; i < localStorage.length; i++) {
+          var k = localStorage.key(i);
+          if (k && k.indexOf('pv3:') === 0) o[k.slice(4)] = JSON.parse(localStorage.getItem(k));
+        }
+        e.source.postMessage({ pv3: 1, op: 'all', data: o }, e.origin);
+      }
+    } catch (x) {}
+  });
+</script>
+</body>
+</html>
