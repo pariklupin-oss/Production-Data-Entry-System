@@ -44,6 +44,12 @@ tr:hover td{background:#16a34a12}
 #login{max-width:380px;margin:12vh auto;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:22px}
 #login input{width:100%;font:inherit;padding:9px;border:1px solid var(--line);border-radius:8px;margin:8px 0 12px;background:var(--card);color:var(--ink)}
 #msg{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:9px 15px;border-radius:8px;display:none;z-index:9;max-width:90vw}
+.ab{font:inherit;font-size:11.5px;padding:2px 8px;border-radius:6px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;margin-right:4px}
+.ab:hover{border-color:var(--head)}
+#mdlg{position:fixed;inset:0;background:#0007;display:none;align-items:center;justify-content:center;z-index:20;padding:16px}
+#mdlg .box{background:var(--card);color:var(--ink);border-radius:12px;padding:18px;max-width:400px;width:100%;border:1px solid var(--line)}
+#mdlg input,#mdlg select{width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;margin:4px 0 10px;background:var(--card);color:var(--ink);box-sizing:border-box}
+#mdlg label{font-size:12.5px;color:var(--mute)}
 .loading{padding:40px;text-align:center;color:var(--mute)}
 @media (max-width:640px){header h1{width:100%}}
 </style>
@@ -68,6 +74,16 @@ tr:hover td{background:#16a34a12}
 <main><div class="panel" id="panel"><div class="loading">Loading…</div></div></main>
 </div>
 <div id="msg"></div>
+<div id="mdlg"><div class="box">
+  <h3 style="margin-top:0" id="mtitle">Manager action</h3>
+  <div class="note" id="minfo"></div>
+  <label>Action</label>
+  <select id="mact"><option value="HOLD">⏸ HOLD — pause this job (hide from lists)</option><option value="CLOSE">✖ CLOSE — job finished / not needed</option><option value="REOPEN">↺ REOPEN — bring back into lists</option></select>
+  <label>Reason</label><input id="mreason" placeholder="e.g. Job closed in ERP / customer cancelled">
+  <label>Your name</label><input id="mname" autocomplete="name">
+  <label>Manager PIN</label><input id="mpin" type="password" autocomplete="off">
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn g" onclick="mClose()">Cancel</button><button class="btn" id="mgo" onclick="mSave()">Save</button></div>
+</div></div>
 <script>
 const SB_URL='https://axgyeppfrcmhwrpxztvv.supabase.co';
 const SB_KEY='sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT';
@@ -113,15 +129,15 @@ async function loadData(){const fr=$('dfrom').value,to=$('dto').value;if(!fr||!t
  catch(e){if(/key/i.test(e.message)){try{localStorage.removeItem('pv3repkey')}catch(_){};$('app').style.display='none';$('login').style.display='block';msg(e.message,1);return}
   $('panel').innerHTML=`<div class="loading">${esc(e.message)}</div>`;return}
  ROWS=(DATA.jobs||[]).map(x=>Object.assign({},x.d,{_id:x.id,_closed:x.closed,_upd:x.upd}));
- REPS=DATA.reports||[];
+ REPS=DATA.reports||[];HOLD={};for(const h of (DATA.holds||[]))HOLD[h.wo]=h;
  const at=new Date(DATA.at);$('stamp').textContent=`Data: ${at.toLocaleString('en-IN')}  ·  ${ROWS.length} rows  ·  ${dmy(fr)} to ${dmy(to)}`;
  BUILT={};prepare();drawTabs();show(CUR)}
 
 // ---------- WO groups ----------
-let WO={};
+let WO={},HOLD={};
 function prepare(){WO={};for(const r of ROWS){const k=r['WO No']||'?';(WO[k]=WO[k]||[]).push(r)}
  for(const k in WO)WO[k].sort((a,b)=>num(a['Route Sequence'])-num(b['Route Sequence']))}
-function woOpen(k){const l=WO[k]||[];return l.some(r=>!r._closed)&&l.some(r=>!isExt(r)&&!isDone(r))}
+function woOpen(k){if(HOLD[k])return false;const l=WO[k]||[];return l.some(r=>!r._closed)&&l.some(r=>!isExt(r)&&!isDone(r))}
 function ppQty(r){return (WO[r['WO No']]||[]).filter(x=>x['PP Code']===r['PP Code']).reduce((s,x)=>s+num(x['Production Qty']),0)}
 function ppRej(r){return (WO[r['WO No']]||[]).filter(x=>x['PP Code']===r['PP Code']).reduce((s,x)=>s+num(x['Rej Qty']),0)}
 function inRange(d){return d&&d>=$('dfrom').value&&d<=$('dto').value}
@@ -135,25 +151,25 @@ R.pending={name:'Pending Jobs',build(){
    const prev=l.filter(x=>!isExt(x)&&num(x['Route Sequence'])<num(r['Route Sequence']));
    const ready=prev.every(isDone);
    det.push([dmy(pd(r.Date)),r['WO No'],r['JC No'],r.Customer,r['Model Name']||r['Item Code'],r['PP Code'],r['Process Name'],r['Machine Name'],num(r['Plan Qty']),
-    ready?'Ready':'Waiting',days(pd(r.Date),TODAY)])}}
+    ready?'Ready':'Waiting',days(pd(r.Date),TODAY),{wo:r['WO No']}])}}
  det.sort((a,b)=>(b[9]==='Ready')-(a[9]==='Ready')||String(a[6]).localeCompare(b[6])||String(a[1]).localeCompare(b[1]));
  const sm={};for(const d of det){const k=d[6]+'|'+d[7];const s=sm[k]=sm[k]||[d[6],d[7],0,0,0,0];s[2]++;if(d[9]==='Ready'){s[3]++;s[4]+=d[8]}s[5]+=d[8]}
  return {note:'All pending processes of OPEN jobs (not limited by the date range). Ready = previous processes are done, work can start on this machine. Waiting = an earlier process is still pending.',
   kpis:[['Pending processes',det.length],['Ready',det.filter(d=>d[9]==='Ready').length],['Waiting',det.filter(d=>d[9]!=='Ready').length],['Jobs (WO)',new Set(det.map(d=>d[1])).size]],
   sum:{title:'By process / machine',cols:['Process','Machine','Pending','Ready','Ready Plan Qty','Total Plan Qty'],rows:Object.values(sm).sort((a,b)=>b[3]-a[3])},
-  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','PP Code','Process','Machine','Plan Qty','Status','Days'],rows:det}}}};
+  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','PP Code','Process','Machine','Plan Qty','Status','Days','Action'],rows:det}}}};
 R.wip={name:'WIP (Job wise)',build(){
  const det=[];
  for(const k in WO){if(!woOpen(k))continue;const l=WO[k].filter(r=>!isExt(r));if(!l.length)continue;
   const done=l.filter(isDone),pend=l.filter(r=>!isDone(r));const last=done[done.length-1],next=pend[0];const f=l[0];
   det.push([k,f['JC No'],f.Customer,f['Model Name']||f['Item Code'],dmy(pd(f.Date)),Math.max(...l.map(r=>num(r['Plan Qty']))),
-   `${done.length}/${l.length}`,last?last['Process Name']:'—',last?ppQty(last):'',next?next['Process Name']:'',next?next['Machine Name']:'',days(pd(f.Date),TODAY)])}
+   `${done.length}/${l.length}`,last?last['Process Name']:'—',last?ppQty(last):'',next?next['Process Name']:'',next?next['Machine Name']:'',days(pd(f.Date),TODAY),{wo:k}])}
  det.sort((a,b)=>num(b[11])-num(a[11]));
  const sm={};for(const d of det){const s=sm[d[9]]=sm[d[9]]||[d[9],0,0];s[1]++;s[2]+=num(d[8])}
  return {note:'How far each open job card has progressed (not limited by the date range). Last qty = total production of the last completed process.',
   kpis:[['Open jobs',det.length],['Older than 10 days',det.filter(d=>d[11]>=10).length]],
   sum:{title:'By next process (where jobs are waiting)',cols:['Next process','Jobs','Last stage qty'],rows:Object.values(sm).sort((a,b)=>b[1]-a[1])},
-  det:{title:'By job',cols:['WO No','JC','Customer','Item','Plan Date','Plan Qty','Processes done','Last process','Last qty','Next process','Next machine','Days'],rows:det}}}};
+  det:{title:'By job',cols:['WO No','JC','Customer','Item','Plan Date','Plan Qty','Processes done','Last process','Last qty','Next process','Next machine','Days','Action'],rows:det}}}};
 R.pva={name:'Plan vs Actual',build(){
  const det=[];
  for(const r of ROWS){if(isExt(r))continue;const d=pd(r.Date);if(!inRange(d))continue;const a=ppQty(r),p=num(r['Plan Qty']);
@@ -241,13 +257,18 @@ R.shift={name:'Shift Reports',build(){
   kpis:[['Boardline shifts',b.length],['Meter',b.reduce((s,r)=>s+r[5],0)],['Tonnage',+b.reduce((s,r)=>s+r[4],0).toFixed(2)],['Production shifts',p.length],['Production qty',p.reduce((s,r)=>s+r[6],0)]],
   sum:{title:'BOARDLINE',cols:['Date','Shift','Start','End','Tonnage','Meter','Total Hrs','Running Hrs','Speed (m/hr)','Speed/min','Breakdown min','Reason','Remark'],rows:b},
   det:{title:'PRODUCTION (machines)',cols:['Date','Shift','Machine','Start','End','Jobs','Production Qty','Colour change','Total Hrs','Running Hrs','Speed/hr','Breakdown min','Reason','Remark'],rows:p}}}};
+R.hold={name:'Hold / Closed Jobs',build(){
+ const det=Object.values(HOLD).map(h=>[h.wo,h.jc||'',h.customer||'',h.status==='CLOSED'?'Closed':'Hold',h.reason||'',h.by||'',h.at?new Date(h.at).toLocaleString('en-IN'):'',{wo:h.wo,re:1}]);
+ return {note:'Job cards a manager put on HOLD or CLOSED. They are hidden from Pending / WIP and from the operators\' app. Use Reopen to bring one back. (Nothing is changed in ERP.)',
+  kpis:[['On hold',det.filter(d=>d[3]==='Hold').length],['Closed',det.filter(d=>d[3]==='Closed').length]],
+  sum:null,det:{title:'Hold / Closed',cols:['WO No','JC','Customer','State','Reason','By','When','Action'],rows:det}}}};
 R.all={name:'All Data',build(){
  const cols=['Date','WO No','JC No','Customer','Model Name','Item Code','PP Code','Route Sequence','Process Name','Machine Name','Plan Qty','UPS','Production Date','Start Time','End Time','Input Qty','Rej Qty','Production Qty','ERP Status','Job Status','Destination','No of Pallets','Remarks'];
  const det=ROWS.map(r=>cols.map(c=>/Qty|UPS|Route/.test(c)?(r[c]===''||r[c]==null?'':num(r[c])):(r[c]??'')));
  return {note:'All loaded data (selected range + all open jobs). Use search to find anything.',kpis:[['Rows',det.length]],
   sum:null,det:{title:'All rows',cols:cols,rows:det}}}};
 
-const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','all'];
+const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','hold','all'];
 function get(id){if(!BUILT[id])BUILT[id]=R[id].build();return BUILT[id]}
 function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:get(id).det.rows.length;
  return `<button id="tb_${id}" class="${id===CUR?'on':''}" onclick="show('${id}')">${esc(R[id].name)}<span class="n">${n}</span></button>`}).join('')}
@@ -261,7 +282,7 @@ function table(t,key,rows){const s=SORT[key];if(s){rows=[...rows].sort((a,b)=>{c
  const tag=v=>{const s=String(v);if(/^(Ready|Done|Submitted|Partial)$/i.test(s))return `<span class="tag t-ok">${esc(s)}</span>`;
   if(/^(Waiting|Pending)$/i.test(s))return `<span class="tag t-warn">${esc(s)}</span>`;if(/check|error|override|2\+ hours/i.test(s))return `<span class="tag t-bad">${esc(s)}</span>`;return esc(s)};
  return `<h3>${esc(t.title)} <span class="note">(${rows.length})</span></h3><div class="tw"><table><thead><tr>${t.cols.map((c,i)=>`<th class="${NUMC.test(c)?'n':''}" onclick="srt('${key}',${i})">${esc(c)}${s&&s.i===i?(s.d?' ▼':' ▲'):''}</th>`).join('')}</tr></thead><tbody>
- ${show.map(r=>'<tr>'+r.map((v,i)=>`<td class="${typeof v==='number'?'n':''}">${typeof v==='number'?v.toLocaleString('en-IN'):(['Status','ERP Status','Type'].includes(t.cols[i])?tag(v):esc(v))}</td>`).join('')+'</tr>').join('')}
+ ${show.map(r=>'<tr>'+r.map((v,i)=>t.cols[i]==='Action'?`<td>${actBtn(v)}</td>`:`<td class="${typeof v==='number'?'n':''}">${typeof v==='number'?v.toLocaleString('en-IN'):(['Status','ERP Status','Type','State'].includes(t.cols[i])?tag(v):esc(v))}</td>`).join('')+'</tr>').join('')}
  </tbody></table></div>${rows.length>lim?`<div class="note">Showing first ${lim} rows — Excel has all ${rows.length}.</div>`:''}`}
 function srt(key,i){const s=SORT[key];SORT[key]={i,d:s&&s.i===i?!s.d:false};render()}
 function show(id){CUR=id;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id==='tb_'+id));
@@ -272,7 +293,28 @@ function show(id){CUR=id;document.querySelectorAll('nav button').forEach(b=>b.cl
 function render(){const id=CUR,r=get(id);const det=filt(id,r.det);
  $('body').innerHTML=`<div class="note">${esc(r.note)}</div><div class="kpis">${r.kpis.map(k=>`<div class="kpi"><b>${typeof k[1]==='number'?k[1].toLocaleString('en-IN'):esc(k[1])}</b><span>${esc(k[0])}</span></div>`).join('')}</div>
  ${r.sum?table(r.sum,id+'_s',r.sum.rows):''}${table(r.det,id+'_d',det)}`}
-function sheet(t){return XLSX.utils.aoa_to_sheet([t.cols,...t.rows])}
+function sheet(t){const k=t.cols.indexOf('Action');if(k<0)return XLSX.utils.aoa_to_sheet([t.cols,...t.rows]);
+ const cut=a=>a.filter((_,i)=>i!==k);return XLSX.utils.aoa_to_sheet([cut(t.cols),...t.rows.map(cut)])}
+function actBtn(v){if(!v||!v.wo)return '';const w=esc(v.wo).replace(/'/g,'');
+ return v.re?`<button class="ab" onclick="mOpen('${w}','REOPEN')">↺ Reopen</button>`
+  :`<button class="ab" onclick="mOpen('${w}','HOLD')" title="Manager only">⏸ Hold</button><button class="ab" onclick="mOpen('${w}','CLOSE')" title="Manager only">✖ Close</button>`}
+let MWO='';
+function mOpen(wo,act){MWO=wo;const f=(WO[wo]||[])[0]||{};const h=HOLD[wo];
+ $('mtitle').textContent='Manager action — WO '+wo;
+ $('minfo').textContent=[f['JC No']?'JC '+f['JC No']:'',f.Customer||(h&&h.customer)||'',f['Model Name']||f['Item Code']||''].filter(Boolean).join(' · ');
+ $('mact').value=act;$('mreason').value=act==='CLOSE'?'Job closed in ERP':'';
+ try{$('mname').value=localStorage.getItem('pv3mgrname')||'';$('mpin').value=sessionStorage.getItem('pv3mgrpin')||''}catch(e){}
+ $('mdlg').style.display='flex';setTimeout(()=>$('mreason').focus(),50)}
+function mClose(){$('mdlg').style.display='none'}
+async function mSave(){const act=$('mact').value,reason=$('mreason').value.trim(),name=$('mname').value.trim(),pin=$('mpin').value.trim();
+ if(name.length<2){msg('Please write your name',1);return}if(!pin){msg('Enter the Manager PIN',1);return}
+ if(act!=='REOPEN'&&reason.length<3){msg('Please write a reason',1);return}
+ $('mgo').disabled=true;
+ try{const r=await rpc('pv3_mgr_job_hold',{p_pin:pin,p_wo:MWO,p_action:act,p_reason:reason,p_by:name});
+  try{localStorage.setItem('pv3mgrname',name);sessionStorage.setItem('pv3mgrpin',pin)}catch(e){}
+  mClose();msg(r.message||'Saved');await loadData()}
+ catch(e){if(/PIN/i.test(e.message)){try{sessionStorage.removeItem('pv3mgrpin')}catch(_){}}msg(e.message,1)}
+ finally{$('mgo').disabled=false}}
 function fname(x){return `Starish_${x}_${dmy($('dfrom').value)}_to_${dmy($('dto').value)}.xlsx`}
 function exportOne(id){if(!window.XLSX){msg('Excel library did not load — check the internet connection',1);return}
  const r=get(id),wb=XLSX.utils.book_new();const det={title:r.det.title,cols:r.det.cols,rows:filt(id,r.det)};
