@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14532d">
+<title>Starish Mobile Control</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1c2632;--mute:#66727f;--line:#dfe4ea;--head:#14532d;--acc:#16a34a;--run:#2563eb;--bad:#dc2626;--chip:#eef2f6}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1419;--card:#18202a;--ink:#e6edf3;--mute:#9aa7b4;--line:#2b3644;--chip:#222c38}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,Segoe UI,Roboto,Arial}
+header{background:var(--head);color:#fff;padding:12px 16px;position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0}
+header .sub{font-size:12.5px;opacity:.9;margin-top:3px}
+header select{font:inherit;margin-top:6px;padding:4px 6px;border-radius:6px;border:0;max-width:100%}
+main{padding:12px 16px 80px;max-width:900px;margin:0 auto}
+.box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+h2{font-size:14px;color:var(--acc);margin:18px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.card.main{border-left:4px solid var(--acc)}
+.card h3{margin:0 0 4px;font-size:15px;display:flex;gap:8px;align-items:center}
+.card p{margin:0 0 8px;color:var(--mute);font-size:13px}
+.badge{margin-left:auto;font-size:11px;padding:2px 8px;border-radius:99px;background:var(--chip);white-space:nowrap}
+.b-running{background:#dbeafe;color:#1e40af}.b-done{background:#dcfce7;color:#166534}.b-failed,.b-stopped{background:#fee2e2;color:#991b1b}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px}
+label.in{display:flex;flex-direction:column;font-size:12px;color:var(--mute);gap:2px}
+input[type=date],input[type=text],input[type=password]{font:inherit;padding:7px 8px;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--ink)}
+label.fl{font-size:13px;display:flex;gap:6px;align-items:center}
+button{font:inherit;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--acc);color:#fff}
+button.s{background:var(--run)}button.x{background:var(--bad)}button.g{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+button:disabled{opacity:.45}
+.meta{font-size:12px;color:var(--mute);margin-top:6px}
+.pill{display:inline-block;background:var(--chip);border-radius:99px;padding:2px 9px;margin:2px 4px 2px 0;font-size:12.5px}
+#logbox{position:fixed;inset:0;background:#0b1015;color:#d1e7d1;display:none;flex-direction:column;z-index:9}
+#logbox .top{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#111a22;color:#fff}
+#logbox pre{flex:1;margin:0;overflow:auto;padding:10px 12px;font:12px/1.4 Consolas,monospace;white-space:pre-wrap}
+#msg{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:9px;display:none;z-index:10;max-width:92vw}
+#login{max-width:380px;margin:12vh auto;padding:0 16px}
+.cmd{font-size:12.5px;border-bottom:1px solid var(--line);padding:6px 0}
+.off{color:var(--bad);font-weight:600}
+</style>
+</head>
+<body>
+<div id="login" style="display:none"><div class="box">
+  <h2 style="margin-top:0">Starish Mobile Control</h2>
+  <p style="color:var(--mute);font-size:13px">Control Center from your phone. Use the Manager PIN.</p>
+  <label class="in">Your name<input id="lname" type="text" placeholder="e.g. Mukesh"></label><br>
+  <label class="in">Manager PIN<input id="lpin" type="password" inputmode="numeric"></label><br>
+  <button onclick="doLogin()">Open</button>
+</div></div>
+<div id="app" style="display:none">
+<header><h1>Starish Mobile Control</h1>
+  <div class="sub" id="pcline">Loading…</div>
+  <select id="pcsel" onchange="PC=this.value;try{localStorage.setItem('pv3rc_pc',PC)}catch(e){};render()"></select>
+</header>
+<main>
+  <div class="box" id="running"></div>
+  <div id="groups"></div>
+  <h2>Recent requests</h2><div class="box" id="cmds"></div>
+  <div style="text-align:center"><button class="g" onclick="logout()">Log out</button></div>
+</main>
+</div>
+<div id="logbox"><div class="top"><b id="logtitle" style="flex:1"></b><button class="g" onclick="closeLog()">Close ✕</button></div><pre id="logtext"></pre></div>
+<div id="msg"></div>
+<script>
+const SB_URL='https://axgyeppfrcmhwrpxztvv.supabase.co';
+const SB_KEY='sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT';
+let PIN='',NAME='',DATA=null,PC='',LOG=null,FORM={};
+const $=id=>document.getElementById(id);
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function toast(t,bad){const m=$('msg');m.textContent=t;m.style.background=bad?'#991b1b':'#111';m.style.display='block';clearTimeout(m._t);m._t=setTimeout(()=>m.style.display='none',5000)}
+function iso(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+async function rpc(fn,body){const r=await fetch(SB_URL+'/rest/v1/rpc/'+fn,{method:'POST',headers:{apikey:SB_KEY,Authorization:'Bearer '+SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ const t=await r.text();let j=null;try{j=t?JSON.parse(t):null}catch(e){}if(!r.ok)throw Error((j&&(j.message||j.hint))||('Server error '+r.status));return j}
+function start(){try{PIN=sessionStorage.getItem('pv3rc_pin')||'';NAME=localStorage.getItem('pv3rc_name')||''}catch(e){}
+ if(!PIN){$('login').style.display='block';$('lname').value=NAME;return}$('app').style.display='block';load();setInterval(load,5000)}
+function doLogin(){PIN=$('lpin').value.trim();NAME=$('lname').value.trim();if(!PIN||!NAME){toast('Enter your name and the PIN',1);return}
+ try{sessionStorage.setItem('pv3rc_pin',PIN);localStorage.setItem('pv3rc_name',NAME)}catch(e){}$('login').style.display='none';$('app').style.display='block';load();setInterval(load,5000)}
+function logout(){try{sessionStorage.removeItem('pv3rc_pin')}catch(e){}location.reload()}
+async function load(){try{DATA=await rpc('pv3_remote_view',{p_pin:PIN})}catch(e){if(/PIN/i.test(e.message)){logout();return}$('pcline').textContent=e.message;return}
+ const sel=$('pcsel');const hosts=DATA.pcs.map(p=>p.host);if(!PC||!hosts.includes(PC)){let sv='';try{sv=localStorage.getItem('pv3rc_pc')||''}catch(e){}const busy=DATA.pcs.find(p=>(p.tools||[]).some(t=>t.id==='sql_auto'&&t.state==='running'));PC=hosts.includes(sv)?sv:(busy?busy.host:(hosts[0]||''))}
+ sel.innerHTML=DATA.pcs.map(p=>`<option ${p.host===PC?'selected':''}>${esc(p.host)}</option>`).join('');sel.style.display=hosts.length>1?'':'none';render()}
+function pc(){return (DATA&&DATA.pcs.find(p=>p.host===PC))||null}
+const LBL={idle:'—',running:'RUNNING',done:'DONE',failed:'FAILED',stopped:'STOPPED'};
+function saveForm(){document.querySelectorAll('[data-k]').forEach(el=>{FORM[el.dataset.k]=el.type==='checkbox'?el.checked:el.value})}
+function render(){const p=pc();if(!p){$('pcline').innerHTML='<span class="off">No PC has connected yet. Start Control Center on the Admin PC.</span>';$('groups').innerHTML='';return}
+ saveForm();
+ const age=(new Date(DATA.now)-new Date(p.updated_at))/1000;const online=age<60;
+ $('pcline').innerHTML=`PC: <b>${esc(p.host)}</b> · ${online?'online':'<span class="off">OFFLINE</span>'} · last seen ${new Date(p.updated_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+ const tools=p.tools||[];const run=tools.filter(t=>t.state==='running');
+ $('running').innerHTML='<b>Running now:</b> '+(run.map(t=>`<span class="pill">🔵 ${esc(t.name)}</span>`).join('')||'<span class="pill">nothing</span>')+(online?'':'<div class="off" style="margin-top:6px">The PC is not sending updates. Buttons will not work until Control Center runs again.</div>');
+ const gs=[...new Set(tools.map(t=>t.group))];const today=iso(new Date());
+ $('groups').innerHTML=gs.map(g=>`<h2>${esc(g)}</h2>`+tools.filter(t=>t.group===g).map(t=>card(t,online,today)).join('')).join('');
+ document.querySelectorAll('[data-k]').forEach(el=>{if(FORM[el.dataset.k]!==undefined){if(el.type==='checkbox')el.checked=FORM[el.dataset.k];else el.value=FORM[el.dataset.k]}});
+ $('cmds').innerHTML=(DATA.cmds||[]).filter(c=>c.host===PC).slice(0,12).map(c=>{const t=tools.find(x=>x.id===c.tool);
+  return `<div class="cmd"><b>${esc(t?t.name:c.tool)}</b> · ${esc(c.action)} · ${esc(c.requested_by||'')} · ${new Date(c.requested_at).toLocaleString('en-IN',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}<br><span class="pill">${esc(c.status)}</span> ${esc(c.result||'')}</div>`}).join('')||'<span style="color:var(--mute)">No requests yet</span>';
+ if(LOG){const l=(p.logs||{})[LOG];const pre=$('logtext');pre.textContent=l||'(no log yet — it appears after the script starts)';pre.scrollTop=pre.scrollHeight}}
+function card(t,online,today){const r=t.state==='running';let ins='';
+ for(const i of (t.inputs||[])){const k=t.id+'__'+i.name;const v=i.default==='today'?today:(i.default||'');
+  ins+=i.type==='text'?`<label class="in">${esc(i.label)}<input type="text" data-k="${k}" placeholder="${esc(i.placeholder||'')}"></label>`:`<label class="in">${esc(i.label)}<input type="date" data-k="${k}" value="${v}"></label>`}
+ for(const f of (t.flags||[]))ins+=`<label class="fl"><input type="checkbox" data-k="${t.id}__f_${f.flag}" ${f.checked?'checked':''}>${esc(f.label)}</label>`;
+ const dis=(!online||!t.ok)?'disabled':'';let btn='';
+ if(t.kind==='job')btn=r?`<button class="x" ${dis} onclick="act('${t.id}','force_stop')">■ Stop</button>`:`<button ${dis} onclick="act('${t.id}','start')">▶ Run</button>`;
+ else{btn=`<button ${dis||(r?'disabled':'')} onclick="act('${t.id}','start')">▶ Start</button>`;
+  if(t.kind==='loop')btn+=`<button class="s" ${(!online||!r||t.stopping)?'disabled':''} onclick="act('${t.id}','stop')">⏸ Safe stop</button>`;
+  btn+=`<button class="x" ${(!online||!r)?'disabled':''} onclick="act('${t.id}','force_stop')">■ ${t.kind==='loop'?'Force stop':'Stop'}</button>`}
+ const st=(t.stopping&&r)?'STOPPING…':LBL[t.state||'idle'];
+ return `<div class="card ${t.main?'main':''}"><h3>${esc(t.name)}<span class="badge b-${t.state||'idle'}">${st}</span></h3><p>${esc(t.desc)}</p>
+ ${t.ok?'':'<p class="off">Script not found on this PC</p>'}${ins?`<div class="row">${ins}</div>`:''}
+ <div class="row">${btn}<button class="g" onclick="openLog('${t.id}')">Log</button></div>
+ <div class="meta">${t.started?'Started: '+esc(t.started)+(t.state!=='running'&&t.ended?' · Finished: '+esc(t.ended):''):''}</div></div>`}
+async function act(id,action){const p=pc();const t=p.tools.find(x=>x.id===id);const vals={},flags=[];
+ for(const i of (t.inputs||[])){const el=document.querySelector(`[data-k="${id}__${i.name}"]`);vals[i.name]=el?el.value:'';if(i.required&&!vals[i.name].trim()){toast('Please fill in: '+i.label,1);return}}
+ for(const f of (t.flags||[])){const el=document.querySelector(`[data-k="${id}__f_${f.flag}"]`);if(el&&el.checked)flags.push(f.flag)}
+ if(action==='start'){let need=!!t.confirm;if(t.confirm_unless)need=!flags.includes(t.confirm_unless);if(t.confirm_if)need=flags.includes(t.confirm_if);
+  if(id==='plan_downstream')need=!flags.includes('--dry-run');if(need&&!confirm(t.confirm))return}
+ if(action==='force_stop'&&!confirm(t.kind==='loop'?'Force stop now? Stopping in the middle of a push can leave an incomplete entry in ERP. Safe stop is better.':'Stop "'+t.name+'"?'))return;
+ try{const d=await rpc('pv3_remote_request',{p_pin:PIN,p_host:PC,p_tool:id,p_action:action,p_vals:vals,p_flags:flags,p_by:NAME});toast(d.message);setTimeout(load,1500);if(action==='start')openLog(id)}
+ catch(e){toast(e.message,1)}}
+function openLog(id){LOG=id;const t=pc().tools.find(x=>x.id===id);$('logtitle').textContent='Log: '+t.name;$('logbox').style.display='flex';render()}
+function closeLog(){LOG=null;$('logbox').style.display='none'}
+start();
+</script>
+</body>
+</html>
