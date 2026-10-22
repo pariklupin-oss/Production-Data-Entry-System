@@ -36,7 +36,11 @@ h3{font-size:14px;margin:14px 0 6px}
 .tw{overflow:auto;max-height:70vh;border:1px solid var(--line);border-radius:8px}
 table{border-collapse:collapse;width:100%;font-size:12.8px}
 th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
-th{background:var(--th);position:sticky;top:0;cursor:pointer;user-select:none;z-index:1}
+th{background:var(--th);cursor:pointer;user-select:none}
+thead{position:sticky;top:0;z-index:2}
+tr.fr th{padding:3px 4px;cursor:default;background:var(--th)}
+tr.fr input{width:100%;min-width:64px;font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink)}
+tr.fr input.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
 td.n,th.n{text-align:right}
 tr:hover td{background:#16a34a12}
 .tag{padding:1px 7px;border-radius:99px;font-size:11.5px;background:var(--chip)}
@@ -276,20 +280,33 @@ const NUMC=/Colour changes|Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Ent
 function filt(id,t){const q=($('q')?.value||'').toLowerCase().trim(),f1=$('f1')?.value||'';
  const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');
  return t.rows.filter(r=>(!q||r.join(' ').toLowerCase().includes(q))&&(!f1||r[pi]===f1||r[mi]===f1))}
-function table(t,key,rows){const s=SORT[key];if(s){rows=[...rows].sort((a,b)=>{const x=a[s.i],y=b[s.i];const nx=typeof x==='number'&&typeof y==='number';
+function table(t,key,rows){const base=rows;rows=cfApply(key,t.cols,rows);const s=SORT[key];if(s){rows=[...rows].sort((a,b)=>{const x=a[s.i],y=b[s.i];const nx=typeof x==='number'&&typeof y==='number';
   const dx=pd(x),dy=pd(y);let c=nx?x-y:(dx&&dy?dx.localeCompare(dy):String(x??'').localeCompare(String(y??''),undefined,{numeric:true}));return s.d?-c:c})}
  const lim=1500,show=rows.slice(0,lim);
  const tag=v=>{const s=String(v);if(/^(Ready|Done|Submitted|Partial)$/i.test(s))return `<span class="tag t-ok">${esc(s)}</span>`;
   if(/^(Waiting|Pending)$/i.test(s))return `<span class="tag t-warn">${esc(s)}</span>`;if(/check|error|override|2\+ hours/i.test(s))return `<span class="tag t-bad">${esc(s)}</span>`;return esc(s)};
- return `<h3>${esc(t.title)} <span class="note">(${rows.length})</span></h3><div class="tw"><table><thead><tr>${t.cols.map((c,i)=>`<th class="${NUMC.test(c)?'n':''}" onclick="srt('${key}',${i})">${esc(c)}${s&&s.i===i?(s.d?' ▼':' ▲'):''}</th>`).join('')}</tr></thead><tbody>
+ return `<h3>${esc(t.title)} <span class="note">(${rows.length})</span></h3><div class="tw"><table><thead><tr>${t.cols.map((c,i)=>`<th class="${NUMC.test(c)?'n':''}" onclick="srt('${key}',${i})">${esc(c)}${s&&s.i===i?(s.d?' ▼':' ▲'):''}</th>`).join('')}</tr>${cfRow(t,key,base)}</thead><tbody>
  ${show.map(r=>'<tr>'+r.map((v,i)=>t.cols[i]==='Action'?`<td>${actBtn(v)}</td>`:`<td class="${typeof v==='number'?'n':''}">${typeof v==='number'?v.toLocaleString('en-IN'):(['Status','ERP Status','Type','State'].includes(t.cols[i])?tag(v):esc(v))}</td>`).join('')+'</tr>').join('')}
  </tbody></table></div>${rows.length>lim?`<div class="note">Showing first ${lim} rows — Excel has all ${rows.length}.</div>`:''}`}
+let CF={},CFT=null;
+function cfApply(key,cols,rows){const f=CF[key];if(!f)return rows;const act=Object.entries(f).filter(([i,v])=>v&&v.trim());if(!act.length)return rows;
+ return rows.filter(r=>act.every(([i,v])=>{const c=r[i];const x=(c&&typeof c==='object')?(c.wo||''):String(c??'');return x.toLowerCase().includes(v.trim().toLowerCase())}))}
+function cfRow(t,key,rows){const f=CF[key]||{};
+ return '<tr class="fr">'+t.cols.map((c,i)=>{if(c==='Action')return '<th></th>';
+  const u=[...new Set(rows.map(r=>{const v=r[i];return v==null||typeof v==='object'?'':String(v)}).filter(Boolean))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).slice(0,300);
+  const id='cf_'+key+'_'+i,v=f[i]||'';
+  return `<th><input id="${id}" list="${id}_l" class="${v?'on':''}" value="${esc(v)}" placeholder="Filter…" autocomplete="off" oninput="cfSet('${key}',${i},this.value)"><datalist id="${id}_l">${u.map(o=>`<option value="${esc(o)}">`).join('')}</datalist></th>`}).join('')+'</tr>'}
+function cfSet(key,i,v){(CF[key]=CF[key]||{})[i]=v;clearTimeout(CFT);CFT=setTimeout(()=>{const id='cf_'+key+'_'+i;const ae=document.activeElement&&document.activeElement.id===id;
+ const sc=[...document.querySelectorAll('.tw')].map(e=>[e.scrollLeft,e.scrollTop]);render();
+ document.querySelectorAll('.tw').forEach((e,k)=>{if(sc[k]){e.scrollLeft=sc[k][0];e.scrollTop=sc[k][1]}});
+ if(ae){const el=$(id);if(el){el.focus();const n=el.value.length;try{el.setSelectionRange(n,n)}catch(e){}}}},250)}
+function cfClear(){const id=CUR;delete CF[id+'_s'];delete CF[id+'_d'];render()}
 function srt(key,i){const s=SORT[key];SORT[key]={i,d:s&&s.i===i?!s.d:false};render()}
 function show(id){CUR=id;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.id==='tb_'+id));
  const r=get(id);const opts=new Set();for(const t of [r.det]){const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');for(const x of t.rows){if(pi>=0&&x[pi])opts.add(x[pi]);if(mi>=0&&x[mi])opts.add(x[mi])}}
  $('panel').innerHTML=`<div class="tools"><input type="search" id="q" placeholder="Search: WO / JC / customer / process…" oninput="render()">
  ${opts.size?`<select id="f1" onchange="render()"><option value="">All processes / machines</option>${[...opts].sort().map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:''}
- <button class="btn" onclick="exportOne('${id}')">⬇ Excel</button></div><div id="body"></div>`;render()}
+ <button class="btn g" onclick="cfClear()">✕ Clear filters</button><button class="btn" onclick="exportOne('${id}')">⬇ Excel</button></div><div id="body"></div>`;render()}
 function render(){const id=CUR,r=get(id);const det=filt(id,r.det);
  $('body').innerHTML=`<div class="note">${esc(r.note)}</div><div class="kpis">${r.kpis.map(k=>`<div class="kpi"><b>${typeof k[1]==='number'?k[1].toLocaleString('en-IN'):esc(k[1])}</b><span>${esc(k[0])}</span></div>`).join('')}</div>
  ${r.sum?table(r.sum,id+'_s',r.sum.rows):''}${table(r.det,id+'_d',det)}`}
@@ -317,8 +334,8 @@ async function mSave(){const act=$('mact').value,reason=$('mreason').value.trim(
  finally{$('mgo').disabled=false}}
 function fname(x){return `Starish_${x}_${dmy($('dfrom').value)}_to_${dmy($('dto').value)}.xlsx`}
 function exportOne(id){if(!window.XLSX){msg('Excel library did not load — check the internet connection',1);return}
- const r=get(id),wb=XLSX.utils.book_new();const det={title:r.det.title,cols:r.det.cols,rows:filt(id,r.det)};
- if(r.sum)XLSX.utils.book_append_sheet(wb,sheet(r.sum),r.sum.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
+ const r=get(id),wb=XLSX.utils.book_new();const det={title:r.det.title,cols:r.det.cols,rows:cfApply(id+'_d',r.det.cols,filt(id,r.det))};
+ if(r.sum)XLSX.utils.book_append_sheet(wb,sheet({title:r.sum.title,cols:r.sum.cols,rows:cfApply(id+'_s',r.sum.cols,r.sum.rows)}),r.sum.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
  XLSX.utils.book_append_sheet(wb,sheet(det),det.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
  XLSX.writeFile(wb,fname(R[id].name.replace(/\W+/g,'_')))}
 function exportAll(){if(!window.XLSX){msg('Excel library did not load',1);return}if(!DATA){msg('Please load the data first',1);return}
