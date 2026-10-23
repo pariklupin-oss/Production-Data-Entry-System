@@ -117,6 +117,7 @@ function bdText(v){if(Array.isArray(v))return v.map(x=>x&&typeof x==='object'?`$
 /* ---------- tabs ---------- */
 const TABS=[
  {id:'entries',name:'Production Entries',dates:true},
+ {id:'corr',name:'⚠ Corrugation Check',dates:true},
  {id:'BOARDLINE',name:'Boardline Reports',dates:true},
  {id:'PRODUCTION',name:'Production Reports',dates:true},
  {id:'machines',name:'Machines'},
@@ -135,6 +136,7 @@ async function load(force){
   try{let rows;
     if(CUR==='entries')rows=(await rpc('pv3_adm_entries',{p_pin:PIN,p_from:f,p_to:t})).rows;
     else if(CUR==='BOARDLINE'||CUR==='PRODUCTION')rows=(await rpc('pv3_adm_reports',{p_pin:PIN,p_kind:CUR,p_from:f,p_to:t})).rows;
+    else if(CUR==='corr')rows=(await rpc('pv3_adm_corr_check',{p_pin:PIN,p_from:f,p_to:t})).rows;
     else if(CUR==='machines')rows=(await rpc('pv3_adm_machines',{p_pin:PIN})).rows;
     else if(CUR==='trash')rows=(await rpc('pv3_adm_trash',{p_pin:PIN})).rows;
     else if(CUR==='audit')rows=(await rpc('pv3_adm_audit',{p_pin:PIN})).rows;
@@ -159,6 +161,9 @@ function model(){
       return {i,cells:[`<button class="del" data-i="${i}">Delete</button>`,esc(fmtD(r.report_date)),...vals.map(esc),esc(fmtT(r.created_at)),esc(fmtT(r.updated_at))],
         text:['delete',fmtD(r.report_date),...vals,fmtT(r.created_at),fmtT(r.updated_at)]}})}
   }
+  if(CUR==='corr'){const ks=['flags','date','start','end','shift','wo','jc','customer','qty','status'];
+    return {cols:['Check','Prod Date','Start','End','Boardline shift','WO No','JC','Customer','Production','ERP Status'],rows:rows.map((r,i)=>{const v=ks.map(k=>String(r[k]??''));
+      return {i,cells:[r.flags?`<span class="tag t-bad">${esc(r.flags)}</span>`:'<span class="tag t-ok">OK</span>',...v.slice(1).map((x,j)=>j===8?stTag(x):esc(x))],text:[r.flags||'OK',...v.slice(1)]}})}}
   if(CUR==='machines')return {cols:['','Machine','Added'],rows:rows.map((r,i)=>({i,cells:[`<button class="del" data-i="${i}">Delete</button>`,esc(r.name),esc(fmtT(r.created_at))],text:['delete',r.name,fmtT(r.created_at)]}))};
   if(CUR==='trash')return {cols:['','Deleted at','By','Reason','What','Details','Status'],rows:rows.map((r,i)=>{const s=trashSummary(r);const open=!r.restored_at;
       return {i,gone:!open,cells:[open?`<button class="res" data-i="${i}">Restore</button>`:'',esc(fmtT(r.at)),esc(r.by_name),esc(r.reason),esc(s.what),esc(s.det),
@@ -189,6 +194,7 @@ function render(){
   const notes={entries:'Only entries that are NOT in ERP yet (status "Not sent" / Pending) can be deleted. A deleted entry is cleared from its process, so the operator can enter it again. Extend lots are removed completely. Everything goes to Trash.',
     BOARDLINE:'Deleted report also gets removed from the Report Sheet (Report Portal) in the next copy (about 10 minutes).',
     PRODUCTION:'Deleted report also gets removed from the Report Sheet (Report Portal) in the next copy (about 10 minutes).',
+    corr:'Every CORRUGATION entry of the dates, in time order. Check = OVERLAPS another job (corrugator runs one job at a time), OUTSIDE BOARDLINE SHIFT TIME, NO BOARDLINE REPORT, LONGER THAN 12 H or FUTURE. Fix the flagged ones before the reel consumption report (app Status → Fix, or ERP).',
     machines:'Delete a wrongly added machine name.',trash:'Restore puts the entry back exactly as it was.',audit:'Last 500 changes (manager fixes, admin deletes / restores, job hold).',
     tables:TBL?`Table ${TBL.name} — latest ${TBL.rows.length} rows (read only).`:'Every SQL table with its row count (read only). Click a table to see its rows.'};
   $('panel').innerHTML=`<div class="tools">${TBL?'<button class="btn g" id="tback">← All tables</button>':''}
@@ -240,7 +246,7 @@ async function login(){const name=$('lname').value.trim(),pin=$('lpin').value;
 $('lbtn').onclick=login;$('lpin').onkeydown=e=>{if(e.key==='Enter')login()};
 $('bout').onclick=()=>lock();
 $('bref').onclick=()=>{TBL=null;load(true)};
-['dfrom','dto'].forEach(id=>$(id).onchange=()=>{['entries','BOARDLINE','PRODUCTION'].forEach(t=>delete DATA[t]);if(TABS.find(t=>t.id===CUR).dates)load(true);else drawTabs()});
+['dfrom','dto'].forEach(id=>$(id).onchange=()=>{['entries','corr','BOARDLINE','PRODUCTION'].forEach(t=>delete DATA[t]);if(TABS.find(t=>t.id===CUR).dates)load(true);else drawTabs()});
 (()=>{const t=new Date(),f=new Date(t);f.setDate(t.getDate()-7);$('dfrom').value=iso(f);$('dto').value=iso(t);
   try{$('lname').value=localStorage.getItem('sqladm_name')||''}catch(e){}
   let idle;const reset=()=>{clearTimeout(idle);idle=setTimeout(()=>{if(PIN)lock('Locked after 20 minutes of no use.')},20*60000)};['click','keydown'].forEach(ev=>document.addEventListener(ev,reset));reset()})();
