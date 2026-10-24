@@ -64,7 +64,7 @@ input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}i
 .sc{font-size:11px;font-weight:800;padding:3px 8px;border-radius:20px;white-space:nowrap}.sc-sub{background:#e0f6ee;color:#0d7a51}.sc-par{background:#e3edff;color:#1f5fd0}.sc-ovr{background:#fff3dc;color:#b45309}.sc-chk{background:#ffe9ea;color:#c2272d}.sc-pen{background:#eceaf5;color:#6b6a86}.sc-sav{background:#efe9ff;color:#5b3df5}
 .prow .rm{font-size:12px;color:var(--mut);word-break:break-word}.prow .btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}.prow .btns button{padding:7px 10px;font-size:12px;border-radius:10px}
 .kind{font-size:12px;font-weight:800;margin:14px 2px 6px;text-transform:uppercase;color:var(--mut)}
-</style></head><body>
+.ptag{display:inline-block;font-weight:800;letter-spacing:.2px;padding:2px 9px;border:1.5px solid;border-radius:999px;font-size:.86em;line-height:1.5}.pline{margin:6px 0 0;display:flex;flex-wrap:wrap;align-items:center;gap:6px}</style></head><body>
 <header><div class="logo">SA</div><div class="htxt"><h1>STARISH AUTOPAC<span class="testtag" style="background:#12a36b">SQL</span></h1><small id="identity">Connecting…</small></div><div class="avatar" id="avatar">•</div></header>
 <main><div id="status" class="status" role="status">Loading…</div><nav id="nav"></nav>
 <section id="jobs" class="hidden">
@@ -191,7 +191,7 @@ const filtered=jobs.filter(j=>{if(m&&proc(j)!==m)return false;if(q&&!JSON.string
 const waiting=jobs.filter(j=>(!m||proc(j)===m)&&st(j)==='pending'&&j.ready===false&&!AUTO_PROC.test(proc(j))).length;
 $('count').textContent=filtered.length+' jobs'+(state==='pending'&&waiting?'  ·  '+waiting+' waiting (previous process not done)':'');$('jobcards').replaceChildren();
 for(const j of filtered.slice(0,100)){const s=st(j),[c,cl]=STATE[s];const card=el('article','card');card.style.setProperty('--c',c);card.style.setProperty('--cl',cl);
-const b=el('div','cbody');const chip=el('span','chip',chipText(j));b.append(chip,el('h3','','JC '+j['JC No']+' · '+j['WO No']),el('p','',j.Customer),el('p','',j['Model Name']),el('p','muted','⚙️ '+proc(j)+'  ·  📅 '+(j['Production Date']||j.Date||'')));
+const b=el('div','cbody');const chip=el('span','chip',chipText(j));b.append(chip,el('h3','','JC '+j['JC No']+' · '+j['WO No']),el('p','',j.Customer),el('p','',j['Model Name']),(()=>{const pl=el('p','pline');pl.append(procTag(proc(j)),el('span','muted','  📅 '+(j['Production Date']||j.Date||'')));return pl})());
 const stats=el('div','stats');stats.append(el('span','s1','Plan '+(j['Plan Qty']||0)),el('span','s2','UPS '+(j.UPS||'—')),el('span','s3','Done '+(j['Production Qty']||'—')));b.append(stats);
 card.append(el('div','jc','JC\n'+String(j['JC No']||'').slice(-4)),b,el('span','chev','›'));card.onclick=()=>edit(j);$('jobcards').append(card)}
 if(!filtered.length)$('jobcards').append(el('p','loading',state==='pending'&&waiting?'No ready jobs in this filter right now — '+waiting+' job(s) waiting for the previous process.':'No jobs match these filters.'));
@@ -213,6 +213,9 @@ function bdButton(){$('addbd').classList.toggle('hidden',![2,3,4].some(i=>$('bd'
 function resetBd(){[2,3,4].forEach(i=>$('bd'+i).classList.add('hidden'));bdButton()}
 $('addbd').onclick=()=>{const i=[2,3,4].find(i=>$('bd'+i).classList.contains('hidden'));if(i){$('bd'+i).classList.remove('hidden');$('reason'+i).focus()}bdButton()};
 function proc(j){return String(j['Process Name']||j['Machine Name']||'').trim()}
+function procColor(n){n=String(n||'').toUpperCase();const R=[[/CORRUGAT|BOARDLINE/,'#c2410c'],[/PRINT/,'#1d4ed8'],[/FOLD|GLU/,'#7c3aed'],[/AUTO STITCH/,'#0f766e'],[/SEMI-AUTO|STITCH/,'#059669'],[/PUNCH|DIE/,'#dc2626'],[/CREAS/,'#db2777'],[/SLOT/,'#4f46e5'],[/PAST/,'#b45309'],[/LAMIN/,'#0891b2'],[/STRAP|BUNDL/,'#57534e'],[/QUALITY|OQC/,'#16a34a']];for(const [re,c] of R)if(re.test(n))return c;let h=0;for(const ch of n)h=(h*31+ch.charCodeAt(0))%360;return 'hsl('+h+',65%,38%)'}
+function procTag(n,prefix){const c=procColor(n),t=el('span','ptag',(prefix||'')+n);t.style.color=c;t.style.borderColor=c;t.style.background=c.startsWith('#')?c+'14':'rgba(0,0,0,.04)';return t}
+
 function fillProcesses(){const sel=$('machine'),cur=sel.value,names=[...new Set(((boot&&boot.processes)||[]).concat(jobs.map(proc)).map(x=>String(x).trim()).filter(Boolean))].sort();sel.replaceChildren();option(sel,'','⚙️ All processes');for(const n of names)option(sel,n,'⚙️ '+n);sel.value=names.includes(cur)?cur:''}
 function fillMachines(pick){const sel=$('rmachine');sel.replaceChildren();for(const m of (boot.reportMachines||[]))option(sel,m);option(sel,'__add','➕ Add new machine…');if(pick)sel.value=pick}
 $('rmachine').onchange=()=>{if($('rmachine').value==='__add'){$('addmrow').classList.remove('hidden');$('newmachine').value='';$('newmachine').focus();$('rmachine').value=(boot.reportMachines||[])[0]||''}};
@@ -261,7 +264,7 @@ $('smgr').onclick=async()=>{if(MGR){MGR=null;try{sessionStorage.removeItem('pv3m
  try{const ok=await sb('pv3_pin_ok',{p_pin:pin});if(!ok){message('Wrong PIN.','error');return}MGR={pin,name};try{sessionStorage.setItem('pv3mgr',JSON.stringify(MGR))}catch(e){}mgrBar();stRedraw();message('Manager mode on.','success')}catch(e){message(e.message,'error')}};
 function scls(d){const s=String(d['ERP Status']||'');if(s==='Submitted')return['sc-sub','Submitted'];if(s==='Partial')return['sc-par','Partial'];if(s==='Override')return['sc-ovr','Override · ERP pending'];if(s==='Check ERP')return['sc-chk','Check ERP'];if(Number(d['Production Qty']||0)>0)return['sc-sav','Saved · ERP pending'];return['sc-pen','Pending']}
 function stRow(r){const d=r.data,box=el('div','prow'),top=el('div','top'),[c,t]=scls(d);
- top.append(el('b','',(d['Route Sequence']?d['Route Sequence']+'. ':'')+(d['Process Name']||'')+(/\[(SRC:|EXTEND of)/.test(d.Remarks||'')?'  (extend lot)':'')),el('span','sc '+c,t));box.append(top);
+ top.append((()=>{const bb=el('b','');bb.append(procTag(d['Process Name']||'',d['Route Sequence']?d['Route Sequence']+'. ':''));if(/\[(SRC:|EXTEND of)/.test(d.Remarks||''))bb.append(el('span','muted','  (extend lot)'));return bb})(),el('span','sc '+c,t));box.append(top);
  const q=Number(d['Production Qty']||0)>0?('Input '+(d['Input Qty']||0)+' · Prod '+d['Production Qty']+' · Rej '+(d['Rej Qty']||0)+(d['Start Time']?' · '+(d['Production Date']||'')+' '+d['Start Time']+'–'+(d['End Time']||''):'')):'No entry yet';
  box.append(el('div','muted',(d['PP Code']||'')+' · '+q));if(d.Remarks)box.append(el('div','rm',d.Remarks));
  if(MGR){const bt=el('div','btns'),s=String(d['ERP Status']||'');
