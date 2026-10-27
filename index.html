@@ -148,7 +148,19 @@ function decorate(rows){
 const API={
   async bootstrap(){let ms=[];try{ms=(await sb('pv3_list_machines'))||[]}catch(e){}
     return {user:{email:'Starish SQL',views:['MACHINE_NAME','BOARDLINE','PRODUCTION']},today:todayISO(),reportMachines:ms,processes:[]}},
-  async listJobs(){const rows=await sb('pv3_list_jobs');try{localStorage.setItem('pv3sql_jobs',JSON.stringify({t:Date.now(),rows}))}catch(e){}return decorate(rows)},
+  async listJobs(again){/* 27-10-2026 egress saver: phone keeps a copy, SQL sends only changed rows */
+    if(window._jobsV1){const rows=await sb('pv3_list_jobs');return decorate(rows)}
+    let c=window._jobsC||null;if(!c){try{c=JSON.parse(localStorage.getItem('pv3sql_jobs2')||'null')}catch(e){}}
+    if(!c||!c.rows||Date.now()-(c.full||0)>24*3600000)c={full:Date.now(),rows:{},hash:null,order:null};
+    let r;try{r=await sb('pv3_list_jobs2',{p_known:Object.values(c.rows).map(x=>x.row_id+'@'+x.v),p_hash:c.hash})}
+    catch(e){if(/pv3_list_jobs2|schema cache/i.test(e.message)){window._jobsV1=true;return API.listJobs()}throw e}
+    for(const x of (r.rows||[]))c.rows[x.row_id]=x;
+    const order=r.ids||c.order;
+    if(!order||order.length!==r.n||order.some(i=>!c.rows[i])){window._jobsC=null;try{localStorage.removeItem('pv3sql_jobs2')}catch(e){}if(!again)return API.listJobs(true);throw Error('Job list could not load — please refresh.')}
+    const keep={};for(const i of order)keep[i]=c.rows[i];
+    c={full:c.full,t:Date.now(),hash:r.hash,order,rows:keep};window._jobsC=c;
+    try{localStorage.setItem('pv3sql_jobs2',JSON.stringify(c));localStorage.removeItem('pv3sql_jobs')}catch(e){}
+    return decorate(order.map(i=>({row_id:i,revision:keep[i].revision,data:keep[i].data})))},
   _payload(p){return {'Production Date':dmy(p.date),'Start Time':p.start,'End Time':p.end,'Production Qty':Number(p.production||0),'Rej Qty':Number(p.rejection||0),'Input Qty':Number(p.input||0),'No of Pallets':Number(p.pallets||0),'Destination':p.destination||'','Remarks':p.remarks||''}},
   async saveJob(p){return sb('pv3_save_job',{p_row_id:p.id,p_revision:Number(p.version)||0,p:API._payload(p),p_override:p.override==='1'})},
   async extendJob(p){return sb('pv3_extend_job',{p_src_row_id:p.id,p_req_id:p.reqId,p:API._payload(p)})},
@@ -161,7 +173,7 @@ const API={
     return {id:x.id,date:x.report_date,dateText:dmy(x.report_date),shift:d.SHIFT||'',start:d.START_TIME||'',end:d.END_TIME||'',remark:d.REMARK||'',machine:d.MACHINE_NAME||'',jobs:d.NO_OF_JOBS||0,qty:d.PRODUCTION_QTY||0,colours:d.COLOUR_CHANGES||0,tonnage:d.TONNAGE||0,meter:d.METER||0,bd,bdText:(d.BD||[]).filter(b=>b.m).map(b=>b.r+' '+b.m+'m').join(', ')}})},
   async addMachine(n){const r=await sb('pv3_add_machine',{p_name:n});return {name:r.name,message:r.message,machines:r.machines}}
 };
-function cachedJobs(){try{const c=JSON.parse(localStorage.getItem('pv3sql_jobs')||'null');if(c&&Date.now()-c.t<12*3600000)return decorate(c.rows)}catch(e){}return null}
+function cachedJobs(){try{const c=JSON.parse(localStorage.getItem('pv3sql_jobs2')||'null');if(c&&c.order&&Date.now()-c.t<12*3600000)return decorate(c.order.map(i=>({row_id:i,revision:c.rows[i].revision,data:c.rows[i].data})))}catch(e){}return null}
 </script>
 <script>
 const $=id=>document.getElementById(id);let boot,jobs=[],selected=null,kind='',reportId='',busy=false,msgTimer;
