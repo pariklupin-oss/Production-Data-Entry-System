@@ -121,6 +121,7 @@ const TABS=[
  {id:'BOARDLINE',name:'Boardline Reports',dates:true},
  {id:'PRODUCTION',name:'Production Reports',dates:true},
  {id:'machines',name:'Machines'},
+ {id:'jobdel',name:'✖ Delete Job Card'},
  {id:'trash',name:'🗑 Trash'},
  {id:'audit',name:'Audit Log'},
  {id:'tables',name:'All Tables'}];
@@ -129,7 +130,7 @@ function drawTabs(){$('tabs').innerHTML=TABS.map(t=>`<button class="${t.id===CUR
 
 /* ---------- loading ---------- */
 async function load(force){
-  const tab=TABS.find(t=>t.id===CUR);if(force)delete DATA[CUR];
+  const tab=TABS.find(t=>t.id===CUR);if(CUR==='jobdel'){jobDel();return}if(force)delete DATA[CUR];
   if(DATA[CUR]&&!force){render();return}
   $('panel').innerHTML='<div class="loading">Loading…</div>';
   const f=$('dfrom').value,t=$('dto').value;
@@ -179,7 +180,7 @@ function model(){
   }
   return {cols:[],rows:[]}}
 function trashSummary(r){const d=r.row_data||{};
-  if(r.src_table==='production_planning_test'){const x=d.data||{};return {what:r.mode==='ROW'?'Extend lot':'Production entry',det:`WO ${x['WO No']||''} · ${x['Process Name']||''} · ${x['Production Date']||''} ${x['Start Time']||''}-${x['End Time']||''} · Qty ${x['Production Qty']||''}`}}
+  if(r.src_table==='production_planning_test'){const x=d.data||{};return {what:/^JOB CARD DELETE/.test(r.reason||'')?'Job card process':r.mode==='ROW'?'Extend lot':'Production entry',det:`WO ${x['WO No']||''} · ${x['Process Name']||''} · ${x['Production Date']||''} ${x['Start Time']||''}-${x['End Time']||''} · Qty ${x['Production Qty']||''}`}}
   if(r.src_table==='pv3_reports_test'){const x=d.data||{};return {what:(d.kind||'')+' report',det:`${fmtD(d.report_date)} · ${x.SHIFT||''} ${x.MACHINE_NAME||''} · ${x.START_TIME||''}-${x.END_TIME||''}`}}
   if(r.src_table==='pv3_machines_test')return {what:'Machine',det:d.name||''};
   return {what:r.src_table,det:r.src_key}}
@@ -235,6 +236,25 @@ function askDelete(i,blocked){const r=DATA[CUR].rows[i];
   else if(CUR==='machines')dialog('Delete machine?',r.name,'Move to Trash',true,reason=>rpc('pv3_adm_delete_machine',{p_pin:PIN,p_name:r.name,p_reason:reason,p_by:NAME}))}
 function askRestore(i){const r=DATA.trash.rows[i];const s=trashSummary(r);
   dialog('Restore from Trash?',`${s.what}\n${s.det}\nDeleted by ${r.by_name}: ${r.reason}`,'Restore',false,()=>rpc('pv3_adm_restore',{p_pin:PIN,p_trash_id:r.id,p_by:NAME}).then(j=>{['entries','BOARDLINE','PRODUCTION','machines'].forEach(t=>delete DATA[t]);return j}))}
+
+/* ---------- delete a whole job card (29-10-2026) ---------- */
+let JD={q:'',rows:null};
+function jobDel(){
+  const rows=JD.rows,wos=rows?[...new Set(rows.map(r=>(r.data||{})['WO No']))]:[];
+  $('panel').innerHTML=`<div class="tools"><input type="search" id="jdq" placeholder="WO No (2627/10/0521), JC No (521) or PP Code" value="${esc(JD.q)}" style="min-width:320px"><button class="btn" id="jdgo">🔍 Find</button></div>
+   <div class="note">Deletes ALL processes of one job card (wrong / duplicate job card). Not possible if any process is already sent to ERP. Everything goes to Trash, and the Planning import will not add it again. Use rarely.</div>
+   ${rows===null?'':!rows.length?'<div class="loading">No job card found.</div>':wos.map(wo=>{const rs=rows.filter(r=>(r.data||{})['WO No']===wo);const d0=rs[0].data||{};
+     const inErp=rs.some(r=>!['','Pending'].includes(((r.data||{})['ERP Status'])||''));
+     return `<div style="border:1px solid #ddd;border-radius:10px;padding:10px;margin:10px 0"><b>WO ${esc(wo)} · JC ${esc(d0['JC No'])}</b> — ${esc(d0.Customer)} · ${esc(d0['Model Name'])}
+       <div class="tw"><table><thead><tr><th>Step</th><th>Process</th><th>PP Code</th><th>Plan</th><th>Prod Date</th><th>Prod Qty</th><th>ERP Status</th><th>Remarks</th></tr></thead><tbody>
+       ${rs.map(r=>{const d=r.data||{};return `<tr><td>${esc(d['Route Sequence'])}</td><td>${esc(d['Process Name'])}</td><td>${esc(d['PP Code'])}</td><td>${esc(d['Plan Qty'])}</td><td>${esc(d['Production Date'])}</td><td>${esc(d['Production Qty'])}</td><td>${stTag(d['ERP Status'])}</td><td>${esc(d.Remarks)}</td></tr>`}).join('')}</tbody></table></div>
+       ${inErp?'<div class="note" style="color:#b91c1c">Some process is already in ERP — this job card cannot be deleted here.</div>':`<button class="btn" style="background:#dc2626;color:#fff" data-wo="${esc(wo)}">✖ Delete whole job card ${esc(wo)} (${rs.length} rows)</button>`}</div>`}).join('')}`;
+  const go=async()=>{JD.q=$('jdq').value.trim();try{JD.rows=(await rpc('pv3_adm_job_find',{p_pin:PIN,p_q:JD.q})).rows||[]}catch(e){toast(e.message,1);if(/PIN|locked/i.test(e.message))lock(e.message);return}jobDel()};
+  $('jdgo').onclick=go;$('jdq').onkeydown=e=>{if(e.key==='Enter')go()};
+  $('panel').querySelectorAll('button[data-wo]').forEach(b=>b.onclick=()=>{const wo=b.dataset.wo,rs=rows.filter(r=>(r.data||{})['WO No']===wo);
+    dialog('Delete WHOLE job card?',`WO ${wo}\n${rs.length} process row(s):\n${rs.map(r=>'• '+((r.data||{})['Process Name']||'')).join('\n')}\n\nAll go to Trash.`,'Delete job card',true,
+      reason=>{if(!confirm('Sure? Job card '+wo+' will disappear from the app.'))return Promise.reject(Error('Cancelled.'));
+        return rpc('pv3_adm_delete_job',{p_pin:PIN,p_wo:wo,p_reason:reason,p_by:NAME}).then(j=>{JD.rows=null;['entries','corr','trash','audit'].forEach(t=>delete DATA[t]);return j})})})}
 
 /* ---------- login ---------- */
 function lock(why){PIN='';DATA={};$('app').style.display='none';$('login').style.display='block';$('lpin').value='';if(why)toast(why,1)}
