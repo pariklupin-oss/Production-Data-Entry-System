@@ -178,25 +178,25 @@ R.wip={name:'WIP (Job wise)',build(){
 R.pva={name:'Plan vs Actual',build(){
  const det=[];
  for(const r of ROWS){if(isExt(r))continue;const d=pd(r.Date);if(!inRange(d))continue;const a=ppQty(r),p=num(r['Plan Qty']);
-  det.push([dmy(d),r['WO No'],r['JC No'],r.Customer,r['Process Name'],r['Machine Name'],p,a,ppRej(r),p-a,p?Math.round(a/p*100):'',isDone(r)?'Done':'Pending',ST(r)])}
- det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[4]).localeCompare(b[4]));
- const sm={};for(const d of det){const k=d[0]+'|'+d[4];const s=sm[k]=sm[k]||[d[0],d[4],0,0,0,0];s[2]++;if(d[11]==='Done')s[3]++;s[4]+=d[6];s[5]+=d[7]}
+  det.push([dmy(d),r['WO No'],r['JC No'],r.Customer,r['Model Name']||r['Item Code']||'',r['Process Name'],r['Machine Name'],p,a,ppRej(r),p-a,p?Math.round(a/p*100):'',isDone(r)?'Done':'Pending',ST(r)])}
+ det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[5]).localeCompare(b[5]));
+ const sm={};for(const d of det){const k=d[0]+'|'+d[5];const s=sm[k]=sm[k]||[d[0],d[5],0,0,0,0];s[2]++;if(d[12]==='Done')s[3]++;s[4]+=d[7];s[5]+=d[8]}
  const srows=Object.values(sm).map(s=>[...s,s[4]?Math.round(s[5]/s[4]*100):'']).sort((a,b)=>pd(a[0]).localeCompare(pd(b[0])));
- const P=det.reduce((s,d)=>s+d[6],0),A=det.reduce((s,d)=>s+d[7],0);
+ const P=det.reduce((s,d)=>s+d[7],0),A=det.reduce((s,d)=>s+d[8],0);
  return {note:'Jobs PLANNED in the selected date range: plan vs production so far (all lots added).',
-  kpis:[['Planned processes',det.length],['Done',det.filter(d=>d[11]==='Done').length],['Plan qty',P],['Actual qty',A],['Achievement %',P?Math.round(A/P*100)+'%':'—']],
+  kpis:[['Planned processes',det.length],['Done',det.filter(d=>d[12]==='Done').length],['Plan qty',P],['Actual qty',A],['Achievement %',P?Math.round(A/P*100)+'%':'—']],
   sum:{title:'Date × Process',cols:['Plan Date','Process','Jobs','Done','Plan Qty','Actual Qty','%'],rows:srows},
-  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Process','Machine','Plan Qty','Actual Qty','Rej','Balance','%','Status','ERP Status'],rows:det}}}};
+  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','Process','Machine','Plan Qty','Actual Qty','Rej','Balance','%','Status','ERP Status'],rows:det}}}};
 R.entries={name:'Production Entries',build(){
  const det=[];
  for(const r of ROWS){if(!hasQty(r))continue;const d=effDate(r);if(!inRange(d))continue;
-  det.push([dmy(d),r['Start Time'],r['End Time'],r['WO No'],r['JC No'],r.Customer,r['Process Name'],r['Machine Name'],num(r['Input Qty']),num(r['Production Qty']),num(r['Rej Qty']),isExt(r)?'Extend lot':'Normal',ST(r)])}
- det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[7]).localeCompare(b[7])||String(a[1]).localeCompare(b[1]));
- const sm={};for(const d of det){const k=d[0]+'|'+d[7];const s=sm[k]=sm[k]||[d[0],d[7],0,0,0];s[2]++;s[3]+=d[9];s[4]+=d[10]}
+  det.push([dmy(d),r['Start Time'],r['End Time'],r['WO No'],r['JC No'],r.Customer,r['Model Name']||r['Item Code']||'',r['Process Name'],r['Machine Name'],num(r['Input Qty']),num(r['Production Qty']),num(r['Rej Qty']),isExt(r)?'Extend lot':'Normal',ST(r)])}
+ det.sort((a,b)=>pd(a[0]).localeCompare(pd(b[0]))||String(a[8]).localeCompare(b[8])||String(a[1]).localeCompare(b[1]));
+ const sm={};for(const d of det){const k=d[0]+'|'+d[8];const s=sm[k]=sm[k]||[d[0],d[8],0,0,0];s[2]++;s[3]+=d[10];s[4]+=d[11]}
  return {note:'All entries made in the selected date range (by Production Date).',
-  kpis:[['Entries',det.length],['Production qty',det.reduce((s,d)=>s+d[9],0)],['Rejection',det.reduce((s,d)=>s+d[10],0)],['Posted to ERP',det.filter(d=>/submitted|partial/i.test(d[12])).length]],
+  kpis:[['Entries',det.length],['Production qty',det.reduce((s,d)=>s+d[10],0)],['Rejection',det.reduce((s,d)=>s+d[11],0)],['Posted to ERP',det.filter(d=>/submitted|partial/i.test(d[13])).length]],
   sum:{title:'Date × Machine',cols:['Date','Machine','Entries','Production Qty','Rej Qty'],rows:Object.values(sm)},
-  det:{title:'Detail',cols:['Prod Date','Start','End','WO No','JC','Customer','Process','Machine','Input','Production','Rej','Lot','ERP Status'],rows:det}}}};
+  det:{title:'Detail',cols:['Prod Date','Start','End','WO No','JC','Customer','Item','Process','Machine','Input','Production','Rej','Lot','ERP Status'],rows:det}}}};
 // ---------- Machine shift report ----------
 const SHIFT_DAY_START=8*60, SHIFT_NIGHT_START=18*60+30;      // Day 08:00-18:30, Night 18:30-04:30
 function shiftOf(r){const st=mins(r['Start Time']);const d=effDate(r);if(st==null||!d)return null;
