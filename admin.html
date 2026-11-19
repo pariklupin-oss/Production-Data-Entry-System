@@ -151,7 +151,7 @@ function model(){
   const rows=(DATA[CUR]||{rows:[]}).rows;
   if(CUR==='entries'){
     return {cols:['',...ENTRY_COLS,'Updated'],rows:rows.map((r,i)=>{const d=r.data||{};const st=d['ERP Status']||'';const ok=!r.erp_closed&&(st===''||st==='Pending');
-      return {i,cells:[ok?`<button class="del" data-i="${i}">Delete</button>`:`<button class="del off" data-i="${i}" title="Already in ERP">In ERP</button>`,
+      return {i,cells:[ok?`<button class="del" data-i="${i}">Delete</button>`:`<button class="del off" data-i="${i}" title="Already in ERP — click only if you have deleted it in ERP">In ERP ✕</button>`,
         ...ENTRY_COLS.map(c=>c==='ERP Status'?stTag(st):esc(d[c])),esc(fmtT(r.updated_at))],
         text:[ok?'delete':'in erp',...ENTRY_COLS.map(c=>c==='ERP Status'?(st||'Not sent'):String(d[c]??'')),fmtT(r.updated_at)]}})}
   }
@@ -192,7 +192,7 @@ function render(){
   let rows=m.rows.filter(r=>(!q||r.text.join(' ').toLowerCase().includes(q))&&Object.entries(f).every(([c,v])=>c==='q'||!v||String(r.text[c]||'').toLowerCase().includes(v.toLowerCase())));
   if(s){rows=rows.slice().sort((a,b)=>{const x=a.text[s.c]||'',y=b.text[s.c]||'';const nx=parseFloat(x),ny=parseFloat(y);const r=(!isNaN(nx)&&!isNaN(ny)&&/^-?[\d.]+$/.test(x)&&/^-?[\d.]+$/.test(y))?nx-ny:x.localeCompare(y);return s.d*r})}
   const tab=TABS.find(t=>t.id===CUR);
-  const notes={entries:'Only entries that are NOT in ERP yet (status "Not sent" / Pending) can be deleted. A deleted entry is cleared from its process, so the operator can enter it again. Extend lots are removed completely. Everything goes to Trash.',
+  const notes={entries:'Entries NOT in ERP yet (status "Not sent" / Pending) can be deleted directly. An entry that is already in ERP can be deleted here only after you have deleted it in ERP by hand. A deleted entry is cleared from its process, so the operator can enter it again. Extend lots are removed completely. Everything goes to Trash.',
     BOARDLINE:'Deleted report also gets removed from the Report Sheet (Report Portal) in the next copy (about 10 minutes).',
     PRODUCTION:'Deleted report also gets removed from the Report Sheet (Report Portal) in the next copy (about 10 minutes).',
     corr:'Every CORRUGATION entry of the dates, in time order. Check = OVERLAPS another job (corrugator runs one job at a time), OUTSIDE BOARDLINE SHIFT TIME, NO BOARDLINE REPORT, LONGER THAN 12 H or FUTURE. Fix the flagged ones before the reel consumption report (app Status → Fix, or ERP).',
@@ -229,7 +229,11 @@ $('myes').onclick=async()=>{if(!PEND)return;const reason=$('mreason').value.trim
     delete DATA.trash;delete DATA.audit;await load(true)}catch(e){toast(e.message,1)}finally{$('myes').disabled=false}};
 function askDelete(i,blocked){const r=DATA[CUR].rows[i];
   if(CUR==='entries'){const d=r.data||{};const sum=`WO ${d['WO No']||''} · JC ${d['JC No']||''}\n${d['Process Name']||''} (step ${d['Route Sequence']||''})\nDate ${d['Production Date']||''}  ${d['Start Time']||''} – ${d['End Time']||''}\nQty ${d['Production Qty']||''}  Rej ${d['Rej Qty']||''}\nERP Status: ${d['ERP Status']||'Not sent'}`;
-    if(blocked){toast(r.erp_closed?'This job is closed in ERP — cannot delete here.':`This entry is already in ERP (Status: ${d['ERP Status']}). Please correct it in ERP first.`,1);return}
+    if(blocked&&r.erp_closed){toast('This job is closed in ERP — cannot delete here.',1);return}
+    if(blocked){dialog('Entry is already in ERP — delete it here too?',
+      sum+`\n\n⚠ Do this ONLY if you have ALREADY deleted / reversed this entry in ERP by hand.\nAn auto Strapping/OQC or extend lot is removed; a normal process is emptied and will be filled again.`,
+      'I removed it in ERP — Move to Trash',true,
+      reason=>rpc('pv3_adm_delete_entry',{p_pin:PIN,p_row_id:r.row_id,p_reason:reason,p_by:NAME,p_erp_removed:true}));return}
     dialog('Delete production entry?',sum,'Move to Trash',true,reason=>rpc('pv3_adm_delete_entry',{p_pin:PIN,p_row_id:r.row_id,p_reason:reason,p_by:NAME}))}
   else if(CUR==='BOARDLINE'||CUR==='PRODUCTION'){const d=r.data||{};const sum=`${r.kind} report\nDate ${fmtD(r.report_date)} · ${d.SHIFT||''} ${d.MACHINE_NAME||''}\n${d.START_TIME||''} – ${d.END_TIME||''}\nQty ${d.PRODUCTION_QTY??''}`;
     dialog('Delete shift report?',sum,'Move to Trash',true,reason=>rpc('pv3_adm_delete_report',{p_pin:PIN,p_id:r.id,p_reason:reason,p_by:NAME}))}
