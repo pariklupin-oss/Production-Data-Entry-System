@@ -237,7 +237,7 @@ function renderStatus(){
           (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
           (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+'</div>'});
       if(G.key==="hold") html+='<div class="row" style="margin-top:8px;flex-wrap:wrap">'+
-        '<input id="mgr_'+esc(pp)+'" placeholder="Manager name" style="flex:1;min-width:120px">'+
+        '<input id="mgr_'+esc(pp)+'" placeholder="Approver name" style="flex:1;min-width:120px">'+
         '<input id="pin_'+esc(pp)+'" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:90px">'+
         '<button onclick="approveJob(\''+esc(pp)+'\')">Send to ERP</button></div>';
       if((G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy}))
@@ -257,7 +257,7 @@ function undoJob(pp){
 function approveJob(pp){
   if(busy)return;
   var mgr=$("mgr_"+pp).value.trim(), pin=$("pin_"+pp).value.trim();
-  if(!mgr){toast("Enter manager name","bad");return} if(!pin){toast("Enter PIN","bad");return}
+  if(!mgr){toast("Enter approver name","bad");return} if(!pin){toast("Enter your PIN","bad");return}
   try{localStorage.setItem("rc_mgr",mgr)}catch(e){}
   var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="QC Hold"}).map(function(e){return e.id});
   call("approveHold",[ids,pin,mgr],function(r){
