@@ -185,14 +185,17 @@ function draw(){
   if(!job)return;
   $("jTitle").textContent=job.wo+"  —  "+job.ply+" ply";
   $("tab1").className=step===1?"on":"sec"; $("tab2").className=step===2?"on":"sec";
-  var names=PLY_NAMES[job.ply]; if(step===1 && !activePly) activePly=nextEmptyPly();
+  var names=PLY_NAMES[job.ply];
   var html="";
-  if(step===1 && !activePly) html+='<div class="card"><span class="pill ok">Reels loaded on all plies</span> '+
-     'After the reel is used, tap <b>2. Enter weight</b>. If a reel was changed midway, tap "+ Another reel" on that ply.</div>';
+  if(step===1 && !activePly) html+= nextEmptyPly()
+     ? '<div class="card mut">Tap <b>Load reel</b> on any ply (any order).</div>'
+     : '<div class="card"><span class="pill ok">Reels loaded on all plies</span> '+
+       'After a reel is used, tap <b>2. Enter weight</b>. If a reel was changed midway, tap "+ Another reel" on that ply.</div>';
   for(var p=1;p<=job.ply;p++){
     var rs=reelsOf(p), act=(step===1 && p===activePly);
     html+='<div class="slot'+(act?' active':'')+'"><h3><span><span class="num">'+p+'</span>'+names[p-1]+'</span>'+
-      (step===1 && !act && rs.length?'<button class="sec" onclick="pickPly('+p+')">+ Another reel</button>':'')+'</h3>';
+      (step===1 && !act?'<button class="'+(rs.length?'sec':'')+'" onclick="pickPly('+p+')">'+(rs.length?'+ Another reel':'Load reel')+'</button>':'')+
+      (act?'<button class="sec" onclick="pickPly(0)">Close</button>':'')+'</h3>';
     if(!rs.length && !act) html+='<div class="mut">No reel yet</div>';
     rs.forEach(function(e){ html+=reelCard(e) });
     if(act) html+=finder();
