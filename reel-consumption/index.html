@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <title>Reel Consumption</title>
 <link rel="manifest" href="manifest.json">
@@ -43,17 +43,17 @@
 <body>
 <header>
   <h1>Reel Consumption</h1>
-  <input id="op" placeholder="Operator naam" onchange="saveOp()">
+  <input id="op" placeholder="Operator name" onchange="saveOp()">
 </header>
 <main>
   <section id="listView">
     <div class="card">
       <div class="row">
-        <input id="q" oninput="renderJobs()" placeholder="Job card / WO No search (jaise 0419)">
+        <input id="q" oninput="renderJobs()" placeholder="Search job card / WO No (e.g. 0419)">
         <button class="sec" onclick="loadJobs()">&#8635;</button>
       </div>
     </div>
-    <div class="card" id="jobs"><span class="mut">Corrugation job cards load ho rahe hai...</span></div>
+    <div class="card" id="jobs"><span class="mut">Loading corrugation job cards...</span></div>
   </section>
 
   <section id="jobView" style="display:none">
@@ -61,13 +61,13 @@
       <button class="sec" onclick="back()">&larr; Job list</button>
       <h2 id="jTitle" style="margin:10px 0 4px"></h2>
       <div class="mut" id="jSub"></div>
-      <div class="mut" style="margin-top:8px">Ply galat hai?
+      <div class="mut" style="margin-top:8px">Wrong ply?
         <button class="sec" onclick="setPly(3)">3 ply</button>
         <button class="sec" onclick="setPly(5)">5 ply</button></div>
     </div>
     <div class="steps">
-      <button id="tab1" onclick="setStep(1)">1. Reel lagao</button>
-      <button id="tab2" onclick="setStep(2)">2. Weight daalo</button>
+      <button id="tab1" onclick="setStep(1)">1. Load reel</button>
+      <button id="tab2" onclick="setStep(2)">2. Enter weight</button>
     </div>
     <div id="slots"></div>
   </section>
@@ -86,7 +86,7 @@ function toast(t,kind){var m=$("msg");m.textContent=t;m.style.display="block";
   clearTimeout(m._t);m._t=setTimeout(function(){m.style.display="none"},4500)}
 /* ---------- Supabase (same project as Production Data Entry) ---------- */
 var SB_URL="https://axgyeppfrcmhwrpxztvv.supabase.co";
-var SB_KEY="sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT";   // sb_publishable_... (Production app wali). Secret key KABHI nahi.
+var SB_KEY="sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT";   // publishable key only (same as Production app). Never a secret key.
 var JOB_DAYS=4;
 async function sb(fn,body){
   var ctl=new AbortController(),t=setTimeout(function(){ctl.abort()},25000);
@@ -94,8 +94,8 @@ async function sb(fn,body){
       headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
     var txt=await r.text(),j=null;try{j=txt?JSON.parse(txt):null}catch(e){}
     if(!r.ok)throw Error((j&&(j.message||j.hint))||("Server error "+r.status));return j}
-  catch(e){if(e.name==="AbortError")throw Error("Internet slow hai, dobara try karo.");
-    if(e instanceof TypeError)throw Error("Internet/SQL se connect nahi hua.");throw e}
+  catch(e){if(e.name==="AbortError")throw Error("Internet is slow, please try again.");
+    if(e instanceof TypeError)throw Error("Could not connect to the server. Check internet.");throw e}
   finally{clearTimeout(t)}}
 function plyCount(t){var m=String(t||"").match(/(\d)\s*[- ]?\s*ply/i);var n=m?+m[1]:3;return PLY_NAMES[n]?n:3}
 function pDate(v){var s=String(v||"").trim(),m;
@@ -103,8 +103,8 @@ function pDate(v){var s=String(v||"").trim(),m;
   if(m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/))return new Date(+m[3],m[2]-1,+m[1]);
   if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],m[1]-1,+m[2]);return null}
 function fDate(d){return d?("0"+d.getDate()).slice(-2)+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+d.getFullYear():""}
-/* Supabase free-limit (egress) bachane ke liye: Production app jaisa hi delta load —
-   phone pe jobs ki copy rehti hai, server sirf badli hui rows bhejta hai (pv3_list_jobs2). */
+/* To save Supabase free-tier egress: delta load like the Production app —
+   the phone keeps a copy of jobs, the server sends only changed rows (pv3_list_jobs2). */
 async function jobRows(again){
   var c=null;try{c=JSON.parse(localStorage.getItem("rc_jobs2")||"null")}catch(e){}
   if(!c||!c.rows||Date.now()-(c.full||0)>24*3600000)c={full:Date.now(),rows:{},hash:null};
@@ -115,7 +115,7 @@ async function jobRows(again){
   var ids=r.ids||[];
   if(ids.length!==r.n||ids.some(function(i){return !c.rows[i]})){
     try{localStorage.removeItem("rc_jobs2")}catch(e){}
-    if(!again)return jobRows(true);throw Error("Job list load nahi hui, refresh karo.")}
+    if(!again)return jobRows(true);throw Error("Job list did not load, please refresh.")}
   var keep={};ids.forEach(function(i){keep[i]=c.rows[i]});
   try{localStorage.setItem("rc_jobs2",JSON.stringify({full:c.full,rows:keep,hash:r.hash}))}catch(e){}
   return ids.map(function(i){return {data:keep[i].data}});
@@ -148,14 +148,14 @@ function saveOp(){try{localStorage.setItem("rc_op",$("op").value)}catch(e){}}
 try{$("op").value=localStorage.getItem("rc_op")||""}catch(e){}
 
 /* ---------- job list ---------- */
-function loadJobs(){ $("jobs").innerHTML='<span class="mut">Load ho raha hai...</span>';
+function loadJobs(){ $("jobs").innerHTML='<span class="mut">Loading...</span>';
   call("getJobs",[],function(j){JOBS=j;renderJobs()}) }
 function renderJobs(){
   var q=$("q").value.trim().toLowerCase();
   var list=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
-  if(!list.length){$("jobs").innerHTML='<span class="mut">Koi corrugation job nahi mila.</span>';return}
+  if(!list.length){$("jobs").innerHTML='<span class="mut">No corrugation job found.</span>';return}
   $("jobs").innerHTML=list.map(function(j){
-    var badge=j.reels?'<span class="pill ok">'+j.reels+' reel</span>':'<span class="pill warn">reel baaki</span>';
+    var badge=j.reels?'<span class="pill ok">'+j.reels+' reel'+(j.reels>1?'s':'')+'</span>':'<span class="pill warn">No reel yet</span>';
     return '<div class="job" data-pp="'+esc(j.pp)+'"><div><b>'+esc(j.wo)+'</b> &middot; '+esc(j.customer)+
       '<div class="mut">'+esc(j.model)+' &middot; '+esc(j.date)+'</div></div><div style="text-align:right">'+
       '<span class="pill">'+j.ply+' ply</span><br>'+badge+'</div></div>'}).join("");
@@ -165,10 +165,10 @@ function renderJobs(){
 /* ---------- job ---------- */
 function openJob(pp){
   job=JOBS.filter(function(j){return j.pp===pp})[0]; if(!job)return;
-  if(!opName()){toast("Pehle upar apna naam daalo","bad");$("op").focus();return}
+  if(!opName()){toast("First enter your name at the top","bad");$("op").focus();return}
   $("jSub").textContent=job.customer+" | "+job.model+" | Qty "+job.qty;
   $("listView").style.display="none"; $("jobView").style.display="block";
-  ENTRIES=[]; found=null; activePly=0; $("slots").innerHTML='<div class="card mut">Load ho raha hai...</div>';
+  ENTRIES=[]; found=null; activePly=0; $("slots").innerHTML='<div class="card mut">Loading...</div>';
   call("getEntries",[job.pp],function(list){ENTRIES=list; autoStep(); draw()});
 }
 function back(){ job=null; $("jobView").style.display="none"; $("listView").style.display="block"; loadJobs() }
@@ -187,13 +187,13 @@ function draw(){
   $("tab1").className=step===1?"on":"sec"; $("tab2").className=step===2?"on":"sec";
   var names=PLY_NAMES[job.ply]; if(step===1 && !activePly) activePly=nextEmptyPly();
   var html="";
-  if(step===1 && !activePly) html+='<div class="card"><span class="pill ok">Sab ply par reel lag gayi</span> '+
-     'Reel use hone ke baad <b>2. Weight daalo</b> dabao. Beech me reel badli to us ply par "+ Aur reel" dabao.</div>';
+  if(step===1 && !activePly) html+='<div class="card"><span class="pill ok">Reels loaded on all plies</span> '+
+     'After the reel is used, tap <b>2. Enter weight</b>. If a reel was changed midway, tap "+ Another reel" on that ply.</div>';
   for(var p=1;p<=job.ply;p++){
     var rs=reelsOf(p), act=(step===1 && p===activePly);
     html+='<div class="slot'+(act?' active':'')+'"><h3><span><span class="num">'+p+'</span>'+names[p-1]+'</span>'+
-      (step===1 && !act && rs.length?'<button class="sec" onclick="pickPly('+p+')">+ Aur reel</button>':'')+'</h3>';
-    if(!rs.length && !act) html+='<div class="mut">Abhi koi reel nahi</div>';
+      (step===1 && !act && rs.length?'<button class="sec" onclick="pickPly('+p+')">+ Another reel</button>':'')+'</h3>';
+    if(!rs.length && !act) html+='<div class="mut">No reel yet</div>';
     rs.forEach(function(e){ html+=reelCard(e) });
     if(act) html+=finder();
     html+='</div>';
@@ -204,26 +204,26 @@ function draw(){
 function reelCard(e){
   var spec=esc(e.gsm)+' GSM / '+esc(e.bf)+' BF / '+esc(e.size)+' / '+esc(e.shade);
   var head='<div class="row" style="justify-content:space-between"><div><b>Reel '+esc(e.reelNo)+'</b> <span class="mut">mill '+esc(e.millNo)+'</span><br>'+
-    '<span class="mut">'+spec+' &middot; lagate waqt '+e.currentWt+' kg</span></div>';
-  if(e.erpStatus==="Submitted") return '<div class="reel">'+head+'<span class="pill ok">ERP me</span></div>'+
-     '<div class="mut">Bit '+e.balanceWt+' kg &middot; Consumed '+e.consumedWt+' kg</div></div>';
-  var del='<button class="del" onclick="delEntry(\''+esc(e.id)+'\')" title="Hatao">&#10005;</button>';
+    '<span class="mut">'+spec+' &middot; at loading '+e.currentWt+' kg</span></div>';
+  if(e.erpStatus==="Submitted") return '<div class="reel">'+head+'<span class="pill ok">In ERP</span></div>'+
+     '<div class="mut">Balance '+e.balanceWt+' kg &middot; Consumed '+e.consumedWt+' kg</div></div>';
+  var del='<button class="del" onclick="delEntry(\''+esc(e.id)+'\')" title="Remove">&#10005;</button>';
   if(e.erpStatus==="Loaded"){
-    if(step===1) return '<div class="reel">'+head+'<span class="pill warn">Lagi hai</span>'+del+'</div></div>';
+    if(step===1) return '<div class="reel">'+head+'<span class="pill warn">Loaded</span>'+del+'</div></div>';
     return '<div class="reel">'+head+del+'</div>'+
-      '<div class="row" style="margin-top:8px"><input id="bal_'+esc(e.id)+'" inputmode="decimal" placeholder="Bit reel wt kg (poori lagi to 0)" '+
+      '<div class="row" style="margin-top:8px"><input id="bal_'+esc(e.id)+'" inputmode="decimal" placeholder="Balance reel wt kg (0 if fully used)" '+
       'onkeydown="if(event.key===\'Enter\')finish(\''+esc(e.id)+'\')">'+
       '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div></div>';
   }
-  var st=e.erpStatus==="Pending"?'<span class="pill">ERP ke liye ready</span>':'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
-  return '<div class="reel">'+head+st+del+'</div><div class="mut">Bit '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
+  var st=e.erpStatus==="Pending"?'<span class="pill">Ready for ERP</span>':'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
+  return '<div class="reel">'+head+st+del+'</div><div class="mut">Balance '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
     (e.erpNote?' &middot; '+esc(e.erpNote):'')+'</div></div>';
 }
 function finder(){
-  var h='<div class="row" style="margin-top:8px"><input id="reelIn" inputmode="numeric" placeholder="Reel No ya Mill No" '+
-        'onkeydown="if(event.key===\'Enter\')findReel()"><button onclick="findReel()">Dhoondo</button></div>';
+  var h='<div class="row" style="margin-top:8px"><input id="reelIn" inputmode="numeric" placeholder="Reel No or Mill No" '+
+        'onkeydown="if(event.key===\'Enter\')findReel()"><button onclick="findReel()">Search</button></div>';
   if(found && found.multi){
-    h+='<div class="find">Ek se zyada reel mili, sahi wali chuno:'+found.multi.map(function(x,i){
+    h+='<div class="find">More than one reel found, choose the correct one:'+found.multi.map(function(x,i){
       return '<div style="margin-top:6px"><button class="sec" onclick="chooseReel('+i+')">'+esc(x.reelNo)+' / mill '+esc(x.millNo)+
         ' &middot; '+esc(x.gsm)+' GSM &middot; '+esc(x.size)+'</button></div>'}).join("")+'</div>';
   } else if(found && found.reel){
@@ -231,10 +231,10 @@ function finder(){
     h+='<div class="find"><b>Reel '+esc(x.reelNo)+'</b> &middot; mill '+esc(x.millNo)+'<br>'+
       esc(x.gsm)+' GSM &middot; '+esc(x.bf)+' BF &middot; '+esc(x.size)+' cm &middot; '+esc(x.shade)+'<br>'+
       'Weight: <b>'+x.currentWt+' kg</b>'+(x.usedNote?' <span class="pill warn">'+esc(x.usedNote)+'</span>':'')+
-      '<div class="row" style="margin-top:10px"><button onclick="loadIt()">Ply '+activePly+' par lagao</button>'+
-      '<button class="sec" onclick="found=null;draw()">Nahi</button></div></div>';
+      '<div class="row" style="margin-top:10px"><button onclick="loadIt()">Load on ply '+activePly+'</button>'+
+      '<button class="sec" onclick="found=null;draw()">Cancel</button></div></div>';
   } else if(found && found.err){
-    h+='<div class="find"><span class="pill bad">Nahi mili</span> '+esc(found.err)+'</div>';
+    h+='<div class="find"><span class="pill bad">Not found</span> '+esc(found.err)+'</div>';
   }
   return h;
 }
@@ -251,15 +251,15 @@ function loadIt(){
   if(busy||!found||!found.reel)return;
   call("loadReel",[{wo:job.wo,pp:job.pp,customer:job.customer,item:job.item,date:job.date,
      plyCount:job.ply,plyNo:activePly,reelNo:found.reel.reelNo,operator:opName()}],
-    function(list){ ENTRIES=list; toast("Ply "+activePly+" par reel lag gayi","ok"); found=null; activePly=0; autoStep(); draw() });
+    function(list){ ENTRIES=list; toast("Reel loaded on ply "+activePly,"ok"); found=null; activePly=0; autoStep(); draw() });
 }
 function finish(id){
   var v=$("bal_"+id).value.trim();
-  if(v===""){toast("Bit reel wt daalo (poori lagi to 0)","bad");return}
+  if(v===""){toast("Enter balance reel weight (0 if fully used)","bad");return}
   if(busy)return;
-  call("finishReel",[id,job.pp,v,opName()],function(list){ ENTRIES=list; toast("Weight save ho gaya","ok"); draw() });
+  call("finishReel",[id,job.pp,v,opName()],function(list){ ENTRIES=list; toast("Weight saved","ok"); draw() });
 }
-function delEntry(id){ if(busy||!confirm("Ye reel hatani hai?"))return;
+function delEntry(id){ if(busy||!confirm("Remove this reel?"))return;
   call("deleteEntry",[id,job.pp],function(list){ ENTRIES=list; draw() }) }
 
 loadJobs();
