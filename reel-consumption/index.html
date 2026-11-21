@@ -55,6 +55,17 @@
   <input id="op" placeholder="Operator name" onchange="saveOp()">
 </header>
 <main>
+  <div class="steps" id="topNav">
+    <button id="navJobs" class="on" onclick="showTab('jobs')">Jobs</button>
+    <button id="navStatus" class="sec" onclick="showTab('status')">Status</button>
+  </div>
+  <section id="statusView" style="display:none">
+    <div class="card row" style="justify-content:space-between">
+      <span class="mut" id="stInfo">Reel status (last 2 days in ERP + all pending)</span>
+      <button class="sec" onclick="loadStatus()">&#8635;</button>
+    </div>
+    <div id="stBody"><div class="card mut">Tap refresh to load.</div></div>
+  </section>
   <section id="listView">
     <div class="card">
       <div class="row">
@@ -146,7 +157,9 @@ var API={
   lookupReel:function(v){return sb("rc_lookup_reel",{p_value:v})},
   loadReel:function(e){return sb("rc_load_reel",{p:e})},
   finishReel:function(id,pp,b,op){return sb("rc_finish_reel",{p_id:id,p_pp:pp,p_balance:Number(b),p_operator:op})},
-  deleteEntry:function(id,pp){return sb("rc_delete_entry",{p_id:id,p_pp:pp})}
+  deleteEntry:function(id,pp){return sb("rc_delete_entry",{p_id:id,p_pp:pp})},
+  statusList:function(){return sb("rc_status_list",{p_days:2})},
+  approveHold:function(ids,pin,mgr){return sb("rc_approve_hold",{p_ids:ids,p_pin:pin,p_manager:mgr})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -181,6 +194,65 @@ function openJob(pp){
   call("getEntries",[job.pp],function(list){ENTRIES=list; autoStep(); draw()});
 }
 function back(){ job=null; $("jobView").style.display="none"; $("listView").style.display="block"; loadJobs() }
+function showTab(t){
+  $("navJobs").className=t==="jobs"?"on":"sec"; $("navStatus").className=t==="status"?"on":"sec";
+  $("statusView").style.display=t==="status"?"block":"none";
+  $("listView").style.display=(t==="jobs"&&!job)?"block":"none";
+  $("jobView").style.display=(t==="jobs"&&job)?"block":"none";
+  if(t==="status") loadStatus();
+}
+
+/* ---------- Status tab ---------- */
+var STATUS=[];
+var ST_GROUPS=[
+  {key:"hold",  title:"QC Hold — waiting for manager approval", cls:"warn"},
+  {key:"wait",  title:"Production entry pending in ERP (will go to ERP automatically after entry)", cls:"warn"},
+  {key:"ready", title:"Ready for ERP (next auto run)", cls:""},
+  {key:"loaded",title:"Loaded — balance weight not entered", cls:""},
+  {key:"check", title:"Check ERP — needs a person to look", cls:"bad"},
+  {key:"done",  title:"Posted to ERP (last 2 days)", cls:"ok"}];
+function stGroup(e){
+  if(e.status==="QC Hold")return "hold";
+  if(e.status==="Pending")return /^WAIT/.test(e.note||"")?"wait":"ready";
+  if(e.status==="Loaded")return "loaded";
+  if(e.status==="Submitted")return "done";
+  return "check";
+}
+function loadStatus(){ $("stBody").innerHTML='<div class="card mut">Loading...</div>';
+  call("statusList",[],function(list){STATUS=list||[];renderStatus()}) }
+function renderStatus(){
+  var by={};STATUS.forEach(function(e){var g=stGroup(e);(by[g]=by[g]||[]).push(e)});
+  var html="";
+  ST_GROUPS.forEach(function(G){var rows=by[G.key]; if(!rows||!rows.length)return;
+    var jobs={};rows.forEach(function(e){(jobs[e.pp]=jobs[e.pp]||[]).push(e)});
+    html+='<div class="card"><h3 style="margin:0 0 8px"><span class="pill '+G.cls+'">'+rows.length+'</span> '+esc(G.title)+'</h3>';
+    Object.keys(jobs).forEach(function(pp){var js=jobs[pp];
+      html+='<div class="reel"><b>'+esc(js[0].wo)+'</b> <span class="mut">'+esc(js[0].customer||"")+'</span>';
+      js.forEach(function(e){
+        html+='<div class="mut" style="margin-top:4px">Ply '+e.plyNo+' '+esc(e.plyName)+' &middot; Reel <b>'+esc(e.reelNo)+'</b>'+
+          (e.qcHold?' <span class="pill warn">QC</span>':'')+' &middot; '+
+          (e.consumedWt!=null?'Consumed <b>'+e.consumedWt+' kg</b> (bal '+e.balanceWt+')':'Loaded '+e.currentWt+' kg')+
+          ' &middot; '+esc(e.operator||"")+(e.pushedAt?' &middot; ERP '+esc(e.pushedAt):'')+
+          (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
+          (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+'</div>'});
+      if(G.key==="hold") html+='<div class="row" style="margin-top:8px;flex-wrap:wrap">'+
+        '<input id="mgr_'+esc(pp)+'" placeholder="Manager name" style="flex:1;min-width:120px">'+
+        '<input id="pin_'+esc(pp)+'" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:90px">'+
+        '<button onclick="approveJob(\''+esc(pp)+'\')">Send to ERP</button></div>';
+      html+='</div>'});
+    html+='</div>'});
+  $("stBody").innerHTML=html||'<div class="card mut">Nothing pending.</div>';
+  try{var m=localStorage.getItem("rc_mgr")||"";[].forEach.call(document.querySelectorAll('[id^="mgr_"]'),function(i){i.value=m})}catch(e){}
+}
+function approveJob(pp){
+  if(busy)return;
+  var mgr=$("mgr_"+pp).value.trim(), pin=$("pin_"+pp).value.trim();
+  if(!mgr){toast("Enter manager name","bad");return} if(!pin){toast("Enter PIN","bad");return}
+  try{localStorage.setItem("rc_mgr",mgr)}catch(e){}
+  var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="QC Hold"}).map(function(e){return e.id});
+  call("approveHold",[ids,pin,mgr],function(r){
+    if(r&&r.ok){toast(r.msg,"ok");loadStatus()} else {toast((r&&r.msg)||"Failed","bad");var p=$("pin_"+pp);if(p)p.value=""}});
+}
 function setPly(n){ job.ply=n; activePly=0; draw() }
 function setStep(n){ step=n; found=null; activePly=0; draw() }
 function reelsOf(p){return ENTRIES.filter(function(e){return +e.plyNo===p})}
@@ -215,7 +287,8 @@ function draw(){
 }
 function reelCard(e){
   var spec=esc(e.gsm)+' GSM / '+esc(e.bf)+' BF / '+esc(e.size)+' / '+esc(e.shade);
-  var head='<div class="row" style="justify-content:space-between"><div><b>Reel '+esc(e.reelNo)+'</b> <span class="mut">mill '+esc(e.millNo)+'</span><br>'+
+  var head='<div class="row" style="justify-content:space-between"><div><b>Reel '+esc(e.reelNo)+'</b> <span class="mut">mill '+esc(e.millNo)+'</span>'+
+    (e.qcHold?' <span class="pill warn">QC Hold reel</span>':'')+'<br>'+
     '<span class="mut">'+spec+' &middot; at loading '+e.currentWt+' kg</span></div>';
   if(e.erpStatus==="Submitted") return '<div class="reel">'+head+'<span class="pill ok">In ERP</span></div>'+
      '<div class="mut">Balance '+e.balanceWt+' kg &middot; Consumed '+e.consumedWt+' kg</div></div>';
@@ -227,9 +300,13 @@ function reelCard(e){
       'onkeydown="if(event.key===\'Enter\')finish(\''+esc(e.id)+'\')">'+
       '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div></div>';
   }
-  var st=e.erpStatus==="Pending"?'<span class="pill">Ready for ERP</span>':'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
+  var wait=/^WAIT/.test(e.erpNote||"");
+  var st=e.erpStatus==="QC Hold"?'<span class="pill warn">QC Hold &ndash; manager approval</span>'
+        :e.erpStatus==="Pending"?(wait?'<span class="pill warn">Production entry pending</span>':'<span class="pill">Ready for ERP</span>')
+        :'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
   return '<div class="reel">'+head+st+del+'</div><div class="mut">Balance '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
-    (e.erpNote?' &middot; '+esc(e.erpNote):'')+'</div></div>';
+    (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
+    (e.erpNote&&!wait?' &middot; '+esc(e.erpNote):'')+'</div></div>';
 }
 function finder(){
   var h='<div class="row" style="margin-top:8px"><input id="reelIn" inputmode="numeric" placeholder="Reel No or Mill No" '+
@@ -243,6 +320,7 @@ function finder(){
     h+='<div class="find"><b>Reel '+esc(x.reelNo)+'</b> &middot; mill '+esc(x.millNo)+'<br>'+
       esc(x.gsm)+' GSM &middot; '+esc(x.bf)+' BF &middot; '+esc(x.size)+' cm &middot; '+esc(x.shade)+'<br>'+
       'Weight: <b>'+x.currentWt+' kg</b>'+(x.usedNote?' <span class="pill warn">'+esc(x.usedNote)+'</span>':'')+
+      (x.qcHold?'<br><span class="pill warn">QC Hold reel</span> <span class="mut">Goes to ERP only after manager approval (PIN) in Status tab.</span>':'')+
       '<div class="row" style="margin-top:10px"><button onclick="loadIt()">Load on ply '+activePly+'</button>'+
       '<button class="sec" onclick="found=null;draw()">Cancel</button></div></div>';
   } else if(found && found.err){
