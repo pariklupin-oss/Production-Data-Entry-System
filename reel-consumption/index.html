@@ -159,7 +159,8 @@ var API={
   finishReel:function(id,pp,b,op){return sb("rc_finish_reel",{p_id:id,p_pp:pp,p_balance:Number(b),p_operator:op})},
   deleteEntry:function(id,pp){return sb("rc_delete_entry",{p_id:id,p_pp:pp})},
   statusList:function(){return sb("rc_status_list",{p_days:2})},
-  approveHold:function(ids,pin,mgr){return sb("rc_approve_hold",{p_ids:ids,p_pin:pin,p_manager:mgr})}
+  approveHold:function(ids,pin,mgr){return sb("rc_approve_hold",{p_ids:ids,p_pin:pin,p_manager:mgr})},
+  undoApproval:function(ids){return sb("rc_undo_approval",{p_ids:ids})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -239,10 +240,19 @@ function renderStatus(){
         '<input id="mgr_'+esc(pp)+'" placeholder="Manager name" style="flex:1;min-width:120px">'+
         '<input id="pin_'+esc(pp)+'" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:90px">'+
         '<button onclick="approveJob(\''+esc(pp)+'\')">Send to ERP</button></div>';
+      if((G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy}))
+        html+='<div class="row" style="margin-top:8px"><span class="mut" style="flex:1">QC reel sent to ERP by mistake?</span>'+
+          '<button class="sec" onclick="undoJob(\''+esc(pp)+'\')">Undo (back to QC Hold)</button></div>';
       html+='</div>'});
     html+='</div>'});
   $("stBody").innerHTML=html||'<div class="card mut">Nothing pending.</div>';
   try{var m=localStorage.getItem("rc_mgr")||"";[].forEach.call(document.querySelectorAll('[id^="mgr_"]'),function(i){i.value=m})}catch(e){}
+}
+function undoJob(pp){
+  if(busy)return;
+  var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="Pending"&&e.qcHold&&e.qcApprovedBy}).map(function(e){return e.id});
+  if(!ids.length||!confirm("Move "+ids.length+" QC reel(s) back to QC Hold?"))return;
+  call("undoApproval",[ids],function(r){ toast((r&&r.msg)||"Done",(r&&r.ok)?"ok":"bad"); loadStatus() });
 }
 function approveJob(pp){
   if(busy)return;
