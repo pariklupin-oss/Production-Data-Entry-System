@@ -206,7 +206,8 @@ function showTab(t){
 /* ---------- Status tab ---------- */
 var STATUS=[];
 var ST_GROUPS=[
-  {key:"hold",  title:"QC Hold — waiting for manager approval", cls:"warn"},
+  {key:"hold",  title:"QC pending — approver: tap QC OK", cls:"warn"},
+  {key:"qcpass",title:"QC OK given — QC pass in CPMS, then ERP consumption", cls:""},
   {key:"wait",  title:"Production entry pending in ERP (will go to ERP automatically after entry)", cls:"warn"},
   {key:"ready", title:"Ready for ERP (next auto run)", cls:""},
   {key:"loaded",title:"Loaded — balance weight not entered", cls:""},
@@ -214,6 +215,7 @@ var ST_GROUPS=[
   {key:"done",  title:"Posted to ERP (last 2 days)", cls:"ok"}];
 function stGroup(e){
   if(e.status==="QC Hold")return "hold";
+  if(e.status==="Pending"&&e.qcHold&&e.qcApprovedBy)return "qcpass";
   if(e.status==="Pending")return /^WAIT/.test(e.note||"")?"wait":"ready";
   if(e.status==="Loaded")return "loaded";
   if(e.status==="Submitted")return "done";
@@ -235,12 +237,14 @@ function renderStatus(){
           (e.consumedWt!=null?'Consumed <b>'+e.consumedWt+' kg</b> (bal '+e.balanceWt+')':'Loaded '+e.currentWt+' kg')+
           ' &middot; '+esc(e.operator||"")+(e.pushedAt?' &middot; ERP '+esc(e.pushedAt):'')+
           (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
-          (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+'</div>'});
+          (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+
+          (G.key==="hold"?' <button style="padding:6px 12px;margin-left:6px" onclick="approveReel(\''+esc(pp)+'\',\''+esc(e.id)+'\')">QC OK</button>':'')+'</div>'});
       if(G.key==="hold") html+='<div class="row" style="margin-top:8px;flex-wrap:wrap">'+
         '<input id="mgr_'+esc(pp)+'" placeholder="Approver name" style="flex:1;min-width:120px">'+
         '<input id="pin_'+esc(pp)+'" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:90px">'+
-        '<button onclick="approveJob(\''+esc(pp)+'\')">Send to ERP</button></div>';
-      if((G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy}))
+        '<button class="sec" onclick="approveJob(\''+esc(pp)+'\')">QC OK all</button></div>'+
+        '<div class="mut" style="margin-top:4px">Enter approver name + PIN, then tap QC OK on a reel. QC is passed in CPMS, then consumption goes to ERP.</div>';
+      if((G.key==="qcpass"||G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy}))
         html+='<div class="row" style="margin-top:8px"><span class="mut" style="flex:1">QC reel sent to ERP by mistake?</span>'+
           '<button class="sec" onclick="undoJob(\''+esc(pp)+'\')">Undo (back to QC Hold)</button></div>';
       html+='</div>'});
@@ -254,12 +258,14 @@ function undoJob(pp){
   if(!ids.length||!confirm("Move "+ids.length+" QC reel(s) back to QC Hold?"))return;
   call("undoApproval",[ids],function(r){ toast((r&&r.msg)||"Done",(r&&r.ok)?"ok":"bad"); loadStatus() });
 }
-function approveJob(pp){
+function approveReel(pp,id){ approveJob(pp,[id]) }
+function approveJob(pp,only){
   if(busy)return;
   var mgr=$("mgr_"+pp).value.trim(), pin=$("pin_"+pp).value.trim();
-  if(!mgr){toast("Enter approver name","bad");return} if(!pin){toast("Enter your PIN","bad");return}
+  if(!mgr){toast("Enter approver name","bad");$("mgr_"+pp).focus();return}
+  if(!pin){toast("Enter your PIN","bad");$("pin_"+pp).focus();return}
   try{localStorage.setItem("rc_mgr",mgr)}catch(e){}
-  var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="QC Hold"}).map(function(e){return e.id});
+  var ids=only||STATUS.filter(function(e){return e.pp===pp&&e.status==="QC Hold"}).map(function(e){return e.id});
   call("approveHold",[ids,pin,mgr],function(r){
     if(r&&r.ok){toast(r.msg,"ok");loadStatus()} else {toast((r&&r.msg)||"Failed","bad");var p=$("pin_"+pp);if(p)p.value=""}});
 }
