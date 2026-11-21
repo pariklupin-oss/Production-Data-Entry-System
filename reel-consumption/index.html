@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Reel Consumption</title>
+<link rel="manifest" href="manifest.json">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{--bg:#0f1720;--card:#18232f;--line:#2b3a4a;--text:#e8eef5;--mut:#93a4b6;
+        --acc:#19b394;--warn:#f0a030;--bad:#e5534b}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:17px/1.4 system-ui,Segoe UI,Roboto,sans-serif}
+  header{background:#12806a;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  header h1{font-size:19px;margin:0;flex:1}
+  header input{width:150px}
+  main{padding:12px 16px;max-width:760px;margin:auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  input,button{font:inherit;border-radius:10px;border:1px solid var(--line);padding:12px;background:#0c131b;color:var(--text)}
+  input{width:100%}
+  button{background:var(--acc);border:none;color:#04241d;font-weight:700;cursor:pointer;white-space:nowrap}
+  button.sec{background:#2b3a4a;color:var(--text);font-weight:500}
+  button.del{background:transparent;color:var(--bad);padding:6px 10px}
+  button:disabled{opacity:.5}
+  .job{display:flex;justify-content:space-between;gap:8px;padding:12px 8px;border-bottom:1px solid var(--line);cursor:pointer}
+  .job:hover{background:#1f2d3b}
+  .mut{color:var(--mut);font-size:14px}
+  .pill{display:inline-block;white-space:nowrap;padding:3px 9px;border-radius:99px;font-size:13px;background:#2b3a4a}
+  .pill.ok{background:#1d4d2b;color:#9be9a8}.pill.warn{background:#5a3d0a;color:#ffd58a}.pill.bad{background:#5a1d1d;color:#ffb3ad}
+  .row{display:flex;gap:8px;align-items:center}
+  .slot{border:2px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+  .slot.active{border-color:var(--acc);background:#132b27}
+  .slot h3{margin:0 0 6px;font-size:18px;display:flex;justify-content:space-between;align-items:center}
+  .num{display:inline-flex;width:30px;height:30px;border-radius:50%;background:#2b3a4a;align-items:center;justify-content:center;margin-right:8px}
+  .slot.active .num{background:var(--acc);color:#04241d}
+  .reel{background:#0c131b;border-radius:10px;padding:10px;margin-top:8px}
+  .find{margin-top:8px;padding:10px;border-radius:10px;background:#0c131b;border:1px dashed var(--line)}
+  .steps{display:flex;gap:8px;margin-bottom:12px}
+  .steps button{flex:1}
+  .steps button.on{background:var(--acc);color:#04241d}
+  #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:12px 18px;border-radius:10px;display:none;max-width:92%;z-index:9}
+</style>
+</head>
+<body>
+<header>
+  <h1>Reel Consumption</h1>
+  <input id="op" placeholder="Operator naam" onchange="saveOp()">
+</header>
+<main>
+  <section id="listView">
+    <div class="card">
+      <div class="row">
+        <input id="q" oninput="renderJobs()" placeholder="Job card / WO No search (jaise 0419)">
+        <button class="sec" onclick="loadJobs()">&#8635;</button>
+      </div>
+    </div>
+    <div class="card" id="jobs"><span class="mut">Corrugation job cards load ho rahe hai...</span></div>
+  </section>
+
+  <section id="jobView" style="display:none">
+    <div class="card">
+      <button class="sec" onclick="back()">&larr; Job list</button>
+      <h2 id="jTitle" style="margin:10px 0 4px"></h2>
+      <div class="mut" id="jSub"></div>
+      <div class="mut" style="margin-top:8px">Ply galat hai?
+        <button class="sec" onclick="setPly(3)">3 ply</button>
+        <button class="sec" onclick="setPly(5)">5 ply</button></div>
+    </div>
+    <div class="steps">
+      <button id="tab1" onclick="setStep(1)">1. Reel lagao</button>
+      <button id="tab2" onclick="setStep(2)">2. Weight daalo</button>
+    </div>
+    <div id="slots"></div>
+  </section>
+</main>
+<div id="msg"></div>
+
+<script>
+var PLY_NAMES={3:["Top","Flute","Bottom"],5:["Top","Flute-1","Middle","Flute-2","Bottom"],
+  7:["Top","Flute-1","Liner-1","Flute-2","Liner-2","Flute-3","Bottom"]};
+var JOBS=[], job=null, ENTRIES=[], step=1, activePly=0, found=null, busy=false;
+
+function $(id){return document.getElementById(id)}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+function toast(t,kind){var m=$("msg");m.textContent=t;m.style.display="block";
+  m.style.background=kind==="bad"?"#7a2420":kind==="ok"?"#1d5a30":"#3a4a5a";
+  clearTimeout(m._t);m._t=setTimeout(function(){m.style.display="none"},4500)}
+/* ---------- Supabase (same project as Production Data Entry) ---------- */
+var SB_URL="https://axgyeppfrcmhwrpxztvv.supabase.co";
+var SB_KEY="sb_publishable_fVX7S1YB3Zank8FTUmlpXg_v0nkwLCT";   // sb_publishable_... (Production app wali). Secret key KABHI nahi.
+var JOB_DAYS=4;
+async function sb(fn,body){
+  var ctl=new AbortController(),t=setTimeout(function(){ctl.abort()},25000);
+  try{var r=await fetch(SB_URL+"/rest/v1/rpc/"+fn,{method:"POST",signal:ctl.signal,
+      headers:{apikey:SB_KEY,Authorization:"Bearer "+SB_KEY,"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+    var txt=await r.text(),j=null;try{j=txt?JSON.parse(txt):null}catch(e){}
+    if(!r.ok)throw Error((j&&(j.message||j.hint))||("Server error "+r.status));return j}
+  catch(e){if(e.name==="AbortError")throw Error("Internet slow hai, dobara try karo.");
+    if(e instanceof TypeError)throw Error("Internet/SQL se connect nahi hua.");throw e}
+  finally{clearTimeout(t)}}
+function plyCount(t){var m=String(t||"").match(/(\d)\s*[- ]?\s*ply/i);var n=m?+m[1]:3;return PLY_NAMES[n]?n:3}
+function pDate(v){var s=String(v||"").trim(),m;
+  if(m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return new Date(+m[1],m[2]-1,+m[3]);
+  if(m=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/))return new Date(+m[3],m[2]-1,+m[1]);
+  if(m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))return new Date(+m[3],m[1]-1,+m[2]);return null}
+function fDate(d){return d?("0"+d.getDate()).slice(-2)+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+d.getFullYear():""}
+/* Supabase free-limit (egress) bachane ke liye: Production app jaisa hi delta load —
+   phone pe jobs ki copy rehti hai, server sirf badli hui rows bhejta hai (pv3_list_jobs2). */
+async function jobRows(again){
+  var c=null;try{c=JSON.parse(localStorage.getItem("rc_jobs2")||"null")}catch(e){}
+  if(!c||!c.rows||Date.now()-(c.full||0)>24*3600000)c={full:Date.now(),rows:{},hash:null};
+  var r;
+  try{r=await sb("pv3_list_jobs2",{p_known:Object.keys(c.rows).map(function(k){return k+"@"+c.rows[k].v}),p_hash:c.hash})}
+  catch(e){if(/pv3_list_jobs2|schema cache/i.test(e.message))return (await sb("pv3_list_jobs"))||[];throw e}
+  (r.rows||[]).forEach(function(x){c.rows[x.row_id]={v:x.revision,data:x.data}});
+  var ids=r.ids||[];
+  if(ids.length!==r.n||ids.some(function(i){return !c.rows[i]})){
+    try{localStorage.removeItem("rc_jobs2")}catch(e){}
+    if(!again)return jobRows(true);throw Error("Job list load nahi hui, refresh karo.")}
+  var keep={};ids.forEach(function(i){keep[i]=c.rows[i]});
+  try{localStorage.setItem("rc_jobs2",JSON.stringify({full:c.full,rows:keep,hash:r.hash}))}catch(e){}
+  return ids.map(function(i){return {data:keep[i].data}});
+}
+var API={
+  getJobs:async function(){
+    var rows=await jobRows();var cut=new Date();cut.setHours(0,0,0,0);cut.setDate(cut.getDate()-JOB_DAYS);
+    var seen={},jobs=[];
+    for(var i=rows.length-1;i>=0;i--){var d=rows[i].data||rows[i];
+      if(String((d["Machine Name"]||"")+" "+(d["Process Name"]||"")).toUpperCase().indexOf("CORRUGATION")<0)continue;
+      var pp=String(d["PP Code"]||"").trim();if(!pp||seen[pp])continue;
+      var dt=pDate(d["Production Date"]||d["Date"]);if(dt&&dt<cut)continue;seen[pp]=1;
+      jobs.push({wo:d["WO No"],pp:pp,customer:d["Customer"]||"",model:d["Model Name"]||"",item:d["Item Code"]||"",
+        qty:d["Plan Qty"]||"",date:fDate(dt),ply:plyCount(d["Model Name"]),reels:0})}
+    if(jobs.length){var c=await sb("rc_reel_counts",{p_pps:jobs.map(function(j){return j.pp})})||{};
+      jobs.forEach(function(j){j.reels=c[j.pp]||0})}
+    return jobs},
+  getEntries:function(pp){return sb("rc_list_entries",{p_pp:pp})},
+  lookupReel:function(v){return sb("rc_lookup_reel",{p_value:v})},
+  loadReel:function(e){return sb("rc_load_reel",{p:e})},
+  finishReel:function(id,pp,b,op){return sb("rc_finish_reel",{p_id:id,p_pp:pp,p_balance:Number(b),p_operator:op})},
+  deleteEntry:function(id,pp){return sb("rc_delete_entry",{p_id:id,p_pp:pp})}
+};
+function call(fn,args,cb){busy=true;
+  Promise.resolve().then(function(){return API[fn].apply(null,args)})
+  .then(function(x){busy=false;cb(x)})
+  .catch(function(e){busy=false;toast(e&&e.message?e.message:String(e),"bad");draw()})}
+function opName(){return $("op").value.trim()}
+function saveOp(){try{localStorage.setItem("rc_op",$("op").value)}catch(e){}}
+try{$("op").value=localStorage.getItem("rc_op")||""}catch(e){}
+
+/* ---------- job list ---------- */
+function loadJobs(){ $("jobs").innerHTML='<span class="mut">Load ho raha hai...</span>';
+  call("getJobs",[],function(j){JOBS=j;renderJobs()}) }
+function renderJobs(){
+  var q=$("q").value.trim().toLowerCase();
+  var list=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
+  if(!list.length){$("jobs").innerHTML='<span class="mut">Koi corrugation job nahi mila.</span>';return}
+  $("jobs").innerHTML=list.map(function(j){
+    var badge=j.reels?'<span class="pill ok">'+j.reels+' reel</span>':'<span class="pill warn">reel baaki</span>';
+    return '<div class="job" data-pp="'+esc(j.pp)+'"><div><b>'+esc(j.wo)+'</b> &middot; '+esc(j.customer)+
+      '<div class="mut">'+esc(j.model)+' &middot; '+esc(j.date)+'</div></div><div style="text-align:right">'+
+      '<span class="pill">'+j.ply+' ply</span><br>'+badge+'</div></div>'}).join("");
+  [].forEach.call(document.querySelectorAll(".job"),function(d){d.onclick=function(){openJob(d.getAttribute("data-pp"))}});
+}
+
+/* ---------- job ---------- */
+function openJob(pp){
+  job=JOBS.filter(function(j){return j.pp===pp})[0]; if(!job)return;
+  if(!opName()){toast("Pehle upar apna naam daalo","bad");$("op").focus();return}
+  $("jSub").textContent=job.customer+" | "+job.model+" | Qty "+job.qty;
+  $("listView").style.display="none"; $("jobView").style.display="block";
+  ENTRIES=[]; found=null; activePly=0; $("slots").innerHTML='<div class="card mut">Load ho raha hai...</div>';
+  call("getEntries",[job.pp],function(list){ENTRIES=list; autoStep(); draw()});
+}
+function back(){ job=null; $("jobView").style.display="none"; $("listView").style.display="block"; loadJobs() }
+function setPly(n){ job.ply=n; activePly=0; draw() }
+function setStep(n){ step=n; found=null; activePly=0; draw() }
+function reelsOf(p){return ENTRIES.filter(function(e){return +e.plyNo===p})}
+function autoStep(){
+  var allLoaded=true; for(var p=1;p<=job.ply;p++) if(!reelsOf(p).length) allLoaded=false;
+  step = allLoaded ? 2 : 1;
+}
+function nextEmptyPly(){ for(var p=1;p<=job.ply;p++) if(!reelsOf(p).length) return p; return 0 }
+
+function draw(){
+  if(!job)return;
+  $("jTitle").textContent=job.wo+"  —  "+job.ply+" ply";
+  $("tab1").className=step===1?"on":"sec"; $("tab2").className=step===2?"on":"sec";
+  var names=PLY_NAMES[job.ply]; if(step===1 && !activePly) activePly=nextEmptyPly();
+  var html="";
+  if(step===1 && !activePly) html+='<div class="card"><span class="pill ok">Sab ply par reel lag gayi</span> '+
+     'Reel use hone ke baad <b>2. Weight daalo</b> dabao. Beech me reel badli to us ply par "+ Aur reel" dabao.</div>';
+  for(var p=1;p<=job.ply;p++){
+    var rs=reelsOf(p), act=(step===1 && p===activePly);
+    html+='<div class="slot'+(act?' active':'')+'"><h3><span><span class="num">'+p+'</span>'+names[p-1]+'</span>'+
+      (step===1 && !act && rs.length?'<button class="sec" onclick="pickPly('+p+')">+ Aur reel</button>':'')+'</h3>';
+    if(!rs.length && !act) html+='<div class="mut">Abhi koi reel nahi</div>';
+    rs.forEach(function(e){ html+=reelCard(e) });
+    if(act) html+=finder();
+    html+='</div>';
+  }
+  $("slots").innerHTML=html;
+  if(step===1 && activePly && !found){var i=$("reelIn"); if(i) i.focus()}
+}
+function reelCard(e){
+  var spec=esc(e.gsm)+' GSM / '+esc(e.bf)+' BF / '+esc(e.size)+' / '+esc(e.shade);
+  var head='<div class="row" style="justify-content:space-between"><div><b>Reel '+esc(e.reelNo)+'</b> <span class="mut">mill '+esc(e.millNo)+'</span><br>'+
+    '<span class="mut">'+spec+' &middot; lagate waqt '+e.currentWt+' kg</span></div>';
+  if(e.erpStatus==="Submitted") return '<div class="reel">'+head+'<span class="pill ok">ERP me</span></div>'+
+     '<div class="mut">Bit '+e.balanceWt+' kg &middot; Consumed '+e.consumedWt+' kg</div></div>';
+  var del='<button class="del" onclick="delEntry(\''+esc(e.id)+'\')" title="Hatao">&#10005;</button>';
+  if(e.erpStatus==="Loaded"){
+    if(step===1) return '<div class="reel">'+head+'<span class="pill warn">Lagi hai</span>'+del+'</div></div>';
+    return '<div class="reel">'+head+del+'</div>'+
+      '<div class="row" style="margin-top:8px"><input id="bal_'+esc(e.id)+'" inputmode="decimal" placeholder="Bit reel wt kg (poori lagi to 0)" '+
+      'onkeydown="if(event.key===\'Enter\')finish(\''+esc(e.id)+'\')">'+
+      '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div></div>';
+  }
+  var st=e.erpStatus==="Pending"?'<span class="pill">ERP ke liye ready</span>':'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
+  return '<div class="reel">'+head+st+del+'</div><div class="mut">Bit '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
+    (e.erpNote?' &middot; '+esc(e.erpNote):'')+'</div></div>';
+}
+function finder(){
+  var h='<div class="row" style="margin-top:8px"><input id="reelIn" inputmode="numeric" placeholder="Reel No ya Mill No" '+
+        'onkeydown="if(event.key===\'Enter\')findReel()"><button onclick="findReel()">Dhoondo</button></div>';
+  if(found && found.multi){
+    h+='<div class="find">Ek se zyada reel mili, sahi wali chuno:'+found.multi.map(function(x,i){
+      return '<div style="margin-top:6px"><button class="sec" onclick="chooseReel('+i+')">'+esc(x.reelNo)+' / mill '+esc(x.millNo)+
+        ' &middot; '+esc(x.gsm)+' GSM &middot; '+esc(x.size)+'</button></div>'}).join("")+'</div>';
+  } else if(found && found.reel){
+    var x=found.reel;
+    h+='<div class="find"><b>Reel '+esc(x.reelNo)+'</b> &middot; mill '+esc(x.millNo)+'<br>'+
+      esc(x.gsm)+' GSM &middot; '+esc(x.bf)+' BF &middot; '+esc(x.size)+' cm &middot; '+esc(x.shade)+'<br>'+
+      'Weight: <b>'+x.currentWt+' kg</b>'+(x.usedNote?' <span class="pill warn">'+esc(x.usedNote)+'</span>':'')+
+      '<div class="row" style="margin-top:10px"><button onclick="loadIt()">Ply '+activePly+' par lagao</button>'+
+      '<button class="sec" onclick="found=null;draw()">Nahi</button></div></div>';
+  } else if(found && found.err){
+    h+='<div class="find"><span class="pill bad">Nahi mili</span> '+esc(found.err)+'</div>';
+  }
+  return h;
+}
+function pickPly(p){ activePly=p; found=null; draw() }
+function findReel(){
+  var v=$("reelIn").value.trim(); if(!v||busy)return;
+  call("lookupReel",[v],function(r){
+    if(!r.ok) found={err:r.msg}; else if(r.reels.length>1) found={multi:r.reels}; else found={reel:r.reels[0]};
+    draw(); if(found.err){var i=$("reelIn"); if(i){i.value=v;i.select()}}
+  });
+}
+function chooseReel(i){ found={reel:found.multi[i]}; draw() }
+function loadIt(){
+  if(busy||!found||!found.reel)return;
+  call("loadReel",[{wo:job.wo,pp:job.pp,customer:job.customer,item:job.item,date:job.date,
+     plyCount:job.ply,plyNo:activePly,reelNo:found.reel.reelNo,operator:opName()}],
+    function(list){ ENTRIES=list; toast("Ply "+activePly+" par reel lag gayi","ok"); found=null; activePly=0; autoStep(); draw() });
+}
+function finish(id){
+  var v=$("bal_"+id).value.trim();
+  if(v===""){toast("Bit reel wt daalo (poori lagi to 0)","bad");return}
+  if(busy)return;
+  call("finishReel",[id,job.pp,v,opName()],function(list){ ENTRIES=list; toast("Weight save ho gaya","ok"); draw() });
+}
+function delEntry(id){ if(busy||!confirm("Ye reel hatani hai?"))return;
+  call("deleteEntry",[id,job.pp],function(list){ ENTRIES=list; draw() }) }
+
+loadJobs();
+</script>
+</body>
+</html>
