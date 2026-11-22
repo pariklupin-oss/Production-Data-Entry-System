@@ -314,7 +314,8 @@ function reelCard(e){
     return '<div class="reel">'+head+del+'</div>'+
       '<div class="row" style="margin-top:8px"><input id="bal_'+esc(e.id)+'" inputmode="decimal" placeholder="Balance reel wt kg (0 if fully used)" '+
       'onkeydown="if(event.key===\'Enter\')finish(\''+esc(e.id)+'\')">'+
-      '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div></div>';
+      '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div>'+
+      '<button class="sec" style="width:100%;margin-top:8px" onclick="fullConsume(\''+esc(e.id)+'\')">Full Consume (balance 0)</button></div>';
   }
   var wait=/^WAIT/.test(e.erpNote||"");
   var st=e.erpStatus==="QC Hold"?'<span class="pill warn">QC Hold &ndash; manager approval</span>'
@@ -364,6 +365,12 @@ function finish(id){
   if(v===""){toast("Enter balance reel weight (0 if fully used)","bad");return}
   if(busy)return;
   call("finishReel",[id,job.pp,v,opName()],function(list){ ENTRIES=list; toast("Weight saved","ok"); draw() });
+}
+function fullConsume(id){
+  if(busy)return;
+  var e=ENTRIES.filter(function(x){return x.id===id})[0]; if(!e)return;
+  if(!confirm("Reel "+e.reelNo+" fully consumed?\nBalance weight will be saved as 0 kg (consumed "+e.currentWt+" kg)."))return;
+  call("finishReel",[id,job.pp,0,opName()],function(list){ ENTRIES=list; toast("Reel "+e.reelNo+": full consume saved (balance 0)","ok"); draw() });
 }
 function delEntry(id){ if(busy||!confirm("Remove this reel?"))return;
   call("deleteEntry",[id,job.pp],function(list){ ENTRIES=list; draw() }) }
