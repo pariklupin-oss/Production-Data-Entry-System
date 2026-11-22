@@ -206,16 +206,18 @@ function showTab(t){
 /* ---------- Status tab ---------- */
 var STATUS=[];
 var ST_GROUPS=[
-  {key:"hold",  title:"QC pending — approver: tap QC OK", cls:"warn"},
-  {key:"qcpass",title:"QC OK given — QC pass in CPMS, then ERP consumption", cls:""},
+  {key:"hold",  title:"QC Hold in ERP — approver: tap QC OK", cls:"warn"},
+  {key:"qcpass",title:"QC OK given — still Hold in ERP (QC pass in CPMS pending)", cls:"warn"},
+  {key:"qcload",title:"QC Hold reels loaded — balance weight not entered", cls:"warn"},
   {key:"wait",  title:"Production entry pending in ERP (will go to ERP automatically after entry)", cls:"warn"},
   {key:"ready", title:"Ready for ERP (next auto run)", cls:""},
   {key:"loaded",title:"Loaded — balance weight not entered", cls:""},
   {key:"check", title:"Check ERP — needs a person to look", cls:"bad"},
   {key:"done",  title:"Posted to ERP (last 2 days)", cls:"ok"}];
 function stGroup(e){
-  if(e.status==="QC Hold")return "hold";
-  if(e.status==="Pending"&&e.qcHold&&e.qcApprovedBy)return "qcpass";
+  if(e.status==="QC Hold")return e.qcErpHold===false?"ready":"hold";      // ERP me pass ho gayi -> agle run me ERP
+  if(e.status==="Pending"&&e.qcHold&&e.qcApprovedBy&&e.qcErpHold!==false)return "qcpass";
+  if(e.status==="Loaded"&&e.qcHold&&e.qcErpHold!==false)return "qcload";
   if(e.status==="Pending")return /^WAIT/.test(e.note||"")?"wait":"ready";
   if(e.status==="Loaded")return "loaded";
   if(e.status==="Submitted")return "done";
@@ -233,7 +235,7 @@ function renderStatus(){
       html+='<div class="reel"><b>'+esc(js[0].wo)+'</b> <span class="mut">'+esc(js[0].customer||"")+'</span>';
       js.forEach(function(e){
         html+='<div class="mut" style="margin-top:4px">Ply '+e.plyNo+' '+esc(e.plyName)+' &middot; Reel <b>'+esc(e.reelNo)+'</b>'+
-          (e.qcHold?' <span class="pill warn">QC</span>':'')+' &middot; '+
+          qcTag(e)+' &middot; '+
           (e.consumedWt!=null?'Consumed <b>'+e.consumedWt+' kg</b> (bal '+e.balanceWt+')':'Loaded '+e.currentWt+' kg')+
           ' &middot; '+esc(e.operator||"")+(e.pushedAt?' &middot; ERP '+esc(e.pushedAt):'')+
           (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
@@ -244,7 +246,7 @@ function renderStatus(){
         '<input id="pin_'+esc(pp)+'" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" style="width:90px">'+
         '<button class="sec" onclick="approveJob(\''+esc(pp)+'\')">QC OK all</button></div>'+
         '<div class="mut" style="margin-top:4px">Enter approver name + PIN, then tap QC OK on a reel. QC is passed in CPMS, then consumption goes to ERP.</div>';
-      if((G.key==="qcpass"||G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy}))
+      if((G.key==="qcpass"||G.key==="ready"||G.key==="wait") && js.some(function(e){return e.qcHold&&e.qcApprovedBy&&e.qcApprovedBy!=="ERP QC"}))
         html+='<div class="row" style="margin-top:8px"><span class="mut" style="flex:1">QC reel sent to ERP by mistake?</span>'+
           '<button class="sec" onclick="undoJob(\''+esc(pp)+'\')">Undo (back to QC Hold)</button></div>';
       html+='</div>'});
@@ -254,7 +256,7 @@ function renderStatus(){
 }
 function undoJob(pp){
   if(busy)return;
-  var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="Pending"&&e.qcHold&&e.qcApprovedBy}).map(function(e){return e.id});
+  var ids=STATUS.filter(function(e){return e.pp===pp&&e.status==="Pending"&&e.qcHold&&e.qcApprovedBy&&e.qcApprovedBy!=="ERP QC"}).map(function(e){return e.id});
   if(!ids.length||!confirm("Move "+ids.length+" QC reel(s) back to QC Hold?"))return;
   call("undoApproval",[ids],function(r){ toast((r&&r.msg)||"Done",(r&&r.ok)?"ok":"bad"); loadStatus() });
 }
@@ -301,10 +303,15 @@ function draw(){
   $("slots").innerHTML=html;
   if(step===1 && activePly && !found){var i=$("reelIn"); if(i) i.focus()}
 }
+/* QC reel tag: ERP me abhi bhi Hold (qcErpHold) ya pass ho chuki */
+function qcTag(e){
+  if(!e.qcHold) return '';
+  return e.qcErpHold===false ? ' <span class="pill ok">QC Passed</span>' : ' <span class="pill warn">QC Hold (ERP)</span>';
+}
 function reelCard(e){
   var spec=esc(e.gsm)+' GSM / '+esc(e.bf)+' BF / '+esc(e.size)+' / '+esc(e.shade);
   var head='<div class="row" style="justify-content:space-between"><div><b>Reel '+esc(e.reelNo)+'</b> <span class="mut">mill '+esc(e.millNo)+'</span>'+
-    (e.qcHold?' <span class="pill warn">QC Hold reel</span>':'')+'<br>'+
+    qcTag(e)+'<br>'+
     '<span class="mut">'+spec+' &middot; at loading '+e.currentWt+' kg</span></div>';
   if(e.erpStatus==="Submitted") return '<div class="reel">'+head+'<span class="pill ok">In ERP</span></div>'+
      '<div class="mut">Balance '+e.balanceWt+' kg &middot; Consumed '+e.consumedWt+' kg</div></div>';
@@ -318,7 +325,7 @@ function reelCard(e){
       '<button class="sec" style="width:100%;margin-top:8px" onclick="fullConsume(\''+esc(e.id)+'\')">Full Consume (balance 0)</button></div>';
   }
   var wait=/^WAIT/.test(e.erpNote||"");
-  var st=e.erpStatus==="QC Hold"?'<span class="pill warn">QC Hold &ndash; manager approval</span>'
+  var st=e.erpStatus==="QC Hold"?'<span class="pill warn">Waiting for approver QC OK</span>'
         :e.erpStatus==="Pending"?(wait?'<span class="pill warn">Production entry pending</span>':'<span class="pill">Ready for ERP</span>')
         :'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
   return '<div class="reel">'+head+st+del+'</div><div class="mut">Balance '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
@@ -337,7 +344,8 @@ function finder(){
     h+='<div class="find"><b>Reel '+esc(x.reelNo)+'</b> &middot; mill '+esc(x.millNo)+'<br>'+
       esc(x.gsm)+' GSM &middot; '+esc(x.bf)+' BF &middot; '+esc(x.size)+' cm &middot; '+esc(x.shade)+'<br>'+
       'Weight: <b>'+x.currentWt+' kg</b>'+(x.usedNote?' <span class="pill warn">'+esc(x.usedNote)+'</span>':'')+
-      (x.qcHold?'<br><span class="pill warn">QC Hold reel</span> <span class="mut">Goes to ERP only after manager approval (PIN) in Status tab.</span>':'')+
+      (x.qcHold?'<br><span class="pill warn">QC Hold (ERP)</span> <span class="mut">Goes to ERP only after approver QC OK (PIN) in Status tab.</span>':'')+
+      (x.qcPassed?'<br><span class="pill ok">QC Passed</span> <span class="mut">QC passed in ERP.</span>':'')+
       '<div class="row" style="margin-top:10px"><button onclick="loadIt()">Load on ply '+activePly+'</button>'+
       '<button class="sec" onclick="found=null;draw()">Cancel</button></div></div>';
   } else if(found && found.err){
