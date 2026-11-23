@@ -54,6 +54,8 @@
   table.rep th,table.rep td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right}
   table.rep th:first-child,table.rep td:first-child{text-align:left}
   table.rep th{color:var(--mut);font-weight:600}
+  input[type=date]{color-scheme:dark;cursor:pointer}
+  input[type=date]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.9;cursor:pointer;width:22px;height:22px}
   .srow{padding:9px 6px;border-bottom:1px solid var(--line);cursor:pointer}
   .srow:hover{background:#1f2d3b}
   #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:12px 18px;border-radius:10px;display:none;max-width:92%;z-index:9}
@@ -296,13 +298,16 @@ function loadReport(){
   call("report",[$("rpFrom").value,$("rpTo").value,$("rpGroup").value],function(r){
     var T=r.total||{};
     var h='<div class="card"><div class="mut">ERP Reel Consumption report &middot; '+esc(r.from)+' to '+esc(r.to)+'</div>'+
-      '<div style="font-size:26px;font-weight:800;margin:4px 0">'+tn(T.tons)+' t <span class="mut" style="font-size:16px">('+kg(T.kg)+' kg)</span></div>'+
-      '<div class="mut">'+mt(T.meters)+' running meters &middot; '+(T.days||0)+' days &middot; '+(T.grades||0)+' paper grades'+
-      (r.syncedAt?' &middot; ERP synced '+esc(r.syncedAt):' &middot; not synced yet')+'</div></div>';
+      '<div class="row" style="gap:18px;flex-wrap:wrap;margin:6px 0">'+
+        '<div><div class="mut">Tonnage</div><div style="font-size:26px;font-weight:800">'+tn(T.tons)+' t</div></div>'+
+        '<div><div class="mut">Running meters</div><div style="font-size:26px;font-weight:800">'+mt(T.meters)+' m</div></div></div>'+
+      '<div class="mut">'+kg(T.kg)+' kg'+(T.jobs!=null?' &middot; '+T.jobs+' jobs':'')+(T.reels!=null?' &middot; '+T.reels+' reels':'')+
+      ' &middot; '+(T.days||0)+' days'+(r.syncedAt?' &middot; ERP synced '+esc(r.syncedAt):' &middot; not synced yet')+'</div></div>';
+    var hasJobs=(r.rows||[]).some(function(x){return x.jobs!=null});
     h+='<div class="card"><b>'+(r.group==="month"?"Month-wise":"Date-wise")+' (ERP)</b><table class="rep"><tr><th>'+(r.group==="month"?"Month":"Date")+
-       '</th><th>Tonnes</th><th>Meters</th></tr>'+
-       (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+
-       ((r.rows||[]).length?'':'<tr><td colspan="3" class="mut">No consumption in this period (or not synced from ERP yet).</td></tr>')+'</table></div>';
+       '</th>'+(hasJobs?'<th>Jobs</th>':'')+'<th>Tonnes</th><th>Meters</th></tr>'+
+       (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td>'+(hasJobs?'<td>'+x.jobs+'</td>':'')+'<td><b>'+tn(x.tons)+'</b></td><td><b>'+mt(x.meters)+'</b></td></tr>'}).join("")+
+       ((r.rows||[]).length?'':'<tr><td colspan="4" class="mut">No consumption in this period (or not synced from ERP yet).</td></tr>')+'</table></div>';
     var J=r.jobTotal||{}, jd=r.byJobDay||[];
     h+='<div class="card"><b>Job-wise '+(r.group==="month"?"monthly":"daily")+'</b> <span class="mut">('+(r.jobSource?'ERP reel-wise':'app entries')+' &middot; '+(J.jobs||0)+' jobs &middot; '+tn(J.tons)+' t &middot; '+mt(J.meters)+' m)</span>';
     if(jd.length){ var last=null;
@@ -313,8 +318,8 @@ function loadReport(){
     h+='</div>';
     if((r.byGsmBf||[]).length) h+='<div class="card"><b>By GSM / BF (ERP)</b><table class="rep"><tr><th>GSM / BF</th><th>Tonnes</th><th>Meters</th></tr>'+
        r.byGsmBf.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF</td><td>'+tn(x.tons)+'</td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table></div>';
-    if((r.byGrade||[]).length) h+='<div class="card"><b>By paper grade (ERP, top '+r.byGrade.length+')</b><table class="rep"><tr><th>Grade</th><th>kg</th><th>Meters</th></tr>'+
-       r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF / '+esc(x.size)+' cm<div class="mut">'+esc(x.shade)+' &middot; '+esc(x.rm)+'</div></td><td>'+kg(x.kg)+'</td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table></div>';
+    if((r.byGrade||[]).length) h+='<div class="card"><b>By paper grade (ERP, top '+r.byGrade.length+')</b><table class="rep"><tr><th>Grade</th><th>Tonnes</th><th>Meters</th></tr>'+
+       r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF / '+esc(x.size)+' cm<div class="mut">'+esc(x.shade)+(x.rm?' &middot; '+esc(x.rm):'')+'</div></td><td>'+tn(x.tons!=null?x.tons:(Number(x.kg)||0)/1000)+'</td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table></div>';
     h+='<div class="mut" style="margin:0 4px 12px">Meters = kg &times; 1000 &divide; GSM &divide; width (m), width = size cm &divide; 100.</div>';
     $("rpBody").innerHTML=h;
   });
@@ -574,6 +579,11 @@ window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();ins
 window.addEventListener("appinstalled",function(){installEvt=null;$("installBtn").style.display="none";toast("App installed","ok")});
 function installApp(){ if(!installEvt)return; installEvt.prompt();
   installEvt.userChoice.finally(function(){installEvt=null;$("installBtn").style.display="none"}) }
+
+/* date box me kahin bhi click/tap -> calendar khule */
+[].forEach.call(document.querySelectorAll('input[type=date]'),function(i){
+  i.addEventListener('click',function(){try{if(i.showPicker)i.showPicker()}catch(e){}});
+});
 
 loadJobs();
 </script>
