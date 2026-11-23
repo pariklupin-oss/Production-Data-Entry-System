@@ -419,7 +419,7 @@ function renderStatus(){
           (e.consumedWt!=null?'Consumed <b>'+e.consumedWt+' kg</b> (bal '+e.balanceWt+')':'Loaded '+e.currentWt+' kg')+
           ' &middot; '+esc(e.operator||"")+(e.pushedAt?' &middot; ERP '+esc(e.pushedAt):'')+
           (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
-          (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+
+          (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(String(e.note).split(/\s*(Message:|Stacktrace)/)[0].slice(0,180))+'</span>':'')+
           (G.key==="chain"&&e.note?'<br><span style="color:#ffd58a">'+esc(e.note)+'</span>':'')+
           (G.key==="hold"?' <button style="padding:6px 12px;margin-left:6px" onclick="approveReel(\''+esc(pp)+'\',\''+esc(e.id)+'\')">QC OK</button>':'')+'</div>'});
       if(G.key==="hold") html+='<div class="row" style="margin-top:8px;flex-wrap:wrap">'+
