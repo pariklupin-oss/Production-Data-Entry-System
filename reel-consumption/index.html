@@ -103,6 +103,12 @@
         <input id="q" oninput="renderJobs()" placeholder="Search job card / WO No (e.g. 0419)">
         <button class="sec" onclick="loadJobs()">&#8635;</button>
       </div>
+      <div class="row" style="margin-top:8px">
+        <label class="mut" style="flex:1;min-width:0">Planning date
+          <input id="pDate" type="date" style="min-width:0" onchange="loadJobs()"></label>
+        <button class="sec" style="align-self:flex-end" onclick="$('pDate').value='';loadJobs()">Recent</button>
+      </div>
+      <div class="mut" id="jobsSum" style="margin-top:8px"></div>
     </div>
     <div class="card" id="jobs"><span class="mut">Loading corrugation job cards...</span></div>
   </section>
@@ -182,17 +188,22 @@ async function jobRows(again){
   return ids.map(function(i){return {data:keep[i].data}});
 }
 var API={
-  getJobs:async function(){
+  getJobs:async function(day){            // day = "YYYY-MM-DD" (planning date) ya "" (recent JOB_DAYS)
     var rows=await jobRows();var cut=new Date();cut.setHours(0,0,0,0);cut.setDate(cut.getDate()-JOB_DAYS);
+    var want=day?fDate(pDate(day)):"";
     var seen={},jobs=[];
     for(var i=rows.length-1;i>=0;i--){var d=rows[i].data||rows[i];
       if(String((d["Machine Name"]||"")+" "+(d["Process Name"]||"")).toUpperCase().indexOf("CORRUGATION")<0)continue;
       var pp=String(d["PP Code"]||"").trim();if(!pp||seen[pp])continue;
-      var dt=pDate(d["Production Date"]||d["Date"]);if(dt&&dt<cut)continue;seen[pp]=1;
+      var dt=pDate(d["Production Date"]||d["Date"]);
+      if(want){ if(fDate(dt)!==want)continue } else if(dt&&dt<cut)continue;
+      seen[pp]=1;
       jobs.push({wo:d["WO No"],pp:pp,customer:d["Customer"]||"",model:d["Model Name"]||"",item:d["Item Code"]||"",
-        qty:d["Plan Qty"]||"",date:fDate(dt),ply:plyCount(d["Model Name"]),reels:0})}
-    if(jobs.length){var c=await sb("rc_reel_counts",{p_pps:jobs.map(function(j){return j.pp})})||{};
-      jobs.forEach(function(j){j.reels=c[j.pp]||0})}
+        qty:d["Plan Qty"]||"",date:fDate(dt),ply:plyCount(d["Model Name"]),reels:0,sum:null})}
+    if(jobs.length){var pps=jobs.map(function(j){return j.pp});
+      try{ var s=await sb("rc_job_summary",{p_pps:pps})||{};
+        jobs.forEach(function(j){j.sum=s[j.pp]||null; j.reels=j.sum?j.sum.reels:0}) }
+      catch(e){ var c=await sb("rc_reel_counts",{p_pps:pps})||{}; jobs.forEach(function(j){j.reels=c[j.pp]||0}) }}
     return jobs},
   getEntries:function(pp){return sb("rc_list_entries",{p_pp:pp})},
   lookupReel:function(v){return sb("rc_lookup_reel",{p_value:v})},
@@ -215,17 +226,33 @@ function saveOp(){try{localStorage.setItem("rc_op",$("op").value)}catch(e){}}
 try{$("op").value=localStorage.getItem("rc_op")||""}catch(e){}
 
 /* ---------- job list ---------- */
-function loadJobs(){ $("jobs").innerHTML='<span class="mut">Loading...</span>';
-  call("getJobs",[],function(j){JOBS=j;renderJobs()}) }
+var jobsReq=0;
+function loadJobs(){ var my=++jobsReq; $("jobs").innerHTML='<span class="mut">Loading...</span>'; $("jobsSum").textContent="";
+  API.getJobs($("pDate").value).then(function(j){ if(my!==jobsReq)return; JOBS=j; renderJobs() })
+    .catch(function(e){ if(my!==jobsReq)return; toast(e&&e.message?e.message:String(e),"bad") }) }
+/* consumption status: Not started / Partial / Done (sab ply par reel + sabka weight bhara) */
+function jobState(j){
+  var s=j.sum; if(!s||!s.reels) return "none";
+  return (s.plies>=j.ply && !s.loaded) ? "done" : "part";
+}
 function renderJobs(){
   var q=$("q").value.trim().toLowerCase();
   var list=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
-  if(!list.length){$("jobs").innerHTML='<span class="mut">No corrugation job found.</span>';return}
+  var cnt={done:0,part:0,none:0}, kgT=0;
+  list.forEach(function(j){cnt[jobState(j)]++; kgT+=j.sum?Number(j.sum.kg)||0:0});
+  $("jobsSum").innerHTML=list.length?((($("pDate").value)?'Planning '+esc(fDate(pDate($("pDate").value)))+': ':'Recent: ')+list.length+' jobs &middot; '+
+    '<span class="pill ok">Done '+cnt.done+'</span> <span class="pill warn">Partial '+cnt.part+'</span> <span class="pill">Not started '+cnt.none+'</span> &middot; '+
+    tn(kgT/1000)+' t'):'';
+  if(!list.length){$("jobs").innerHTML='<span class="mut">No corrugation job found'+($("pDate").value?' for this planning date':'')+'.</span>';return}
   $("jobs").innerHTML=list.map(function(j){
-    var badge=j.reels?'<span class="pill ok">'+j.reels+' reel'+(j.reels>1?'s':'')+'</span>':'<span class="pill warn">No reel yet</span>';
+    var st=jobState(j), s=j.sum||{};
+    var badge=st==="done"?'<span class="pill ok">Done</span>':st==="part"?'<span class="pill warn">Partial</span>':'<span class="pill">Not started</span>';
+    var info=s.reels?'<div class="mut">'+s.reels+' reel'+(s.reels>1?'s':'')+' &middot; '+tn((Number(s.kg)||0)/1000)+' t'+
+      (s.inErp?' &middot; '+s.inErp+' in ERP':'')+(s.loaded?' &middot; '+s.loaded+' wt pending':'')+'</div>':
+      (j.reels?'<div class="mut">'+j.reels+' reels</div>':'');
     return '<div class="job" data-pp="'+esc(j.pp)+'"><div><b>'+esc(j.wo)+'</b> &middot; '+esc(j.customer)+
       '<div class="mut">'+esc(j.model)+' &middot; '+esc(j.date)+'</div></div><div style="text-align:right">'+
-      '<span class="pill">'+j.ply+' ply</span><br>'+badge+'</div></div>'}).join("");
+      '<span class="pill">'+j.ply+' ply</span> '+badge+info+'</div></div>'}).join("");
   [].forEach.call(document.querySelectorAll(".job"),function(d){d.onclick=function(){openJob(d.getAttribute("data-pp"))}});
 }
 
@@ -277,7 +304,7 @@ function loadReport(){
        (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+
        ((r.rows||[]).length?'':'<tr><td colspan="3" class="mut">No consumption in this period (or not synced from ERP yet).</td></tr>')+'</table></div>';
     var J=r.jobTotal||{}, jd=r.byJobDay||[];
-    h+='<div class="card"><b>Job-wise '+(r.group==="month"?"monthly":"daily")+'</b> <span class="mut">(app entries &middot; '+(J.jobs||0)+' jobs &middot; '+tn(J.tons)+' t &middot; '+mt(J.meters)+' m)</span>';
+    h+='<div class="card"><b>Job-wise '+(r.group==="month"?"monthly":"daily")+'</b> <span class="mut">('+(r.jobSource?'ERP reel-wise':'app entries')+' &middot; '+(J.jobs||0)+' jobs &middot; '+tn(J.tons)+' t &middot; '+mt(J.meters)+' m)</span>';
     if(jd.length){ var last=null;
       h+='<table class="rep"><tr><th>WO</th><th>Reels</th><th>Tonnes</th><th>Meters</th></tr>'+
         jd.map(function(x){var s=''; if(x.period!==last){last=x.period; s='<tr><td colspan="4" style="text-align:left;color:var(--acc);font-weight:700;padding-top:12px">'+esc(x.period)+'</td></tr>'}
