@@ -12,6 +12,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Reel Entry">
 <script>if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js",{scope:"./"}).catch(function(){});</script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root{--bg:#0f1720;--card:#18232f;--line:#2b3a4a;--text:#e8eef5;--mut:#93a4b6;
         --acc:#19b394;--warn:#f0a030;--bad:#e5534b}
@@ -44,6 +45,17 @@
   .steps{display:flex;gap:8px;margin-bottom:12px}
   .steps button{flex:1}
   .steps button.on{background:var(--acc);color:#04241d}
+  .scanner{position:fixed;inset:0;background:rgba(4,10,16,.85);display:none;align-items:flex-end;justify-content:center;z-index:20;padding:10px}
+  .scanner.show{display:flex}
+  .scanner .sheet{width:min(100%,560px);background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+  #qrReader{width:100%;min-height:240px;background:#000;border-radius:10px;overflow:hidden}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  table.rep{width:100%;border-collapse:collapse;font-size:15px}
+  table.rep th,table.rep td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:right}
+  table.rep th:first-child,table.rep td:first-child{text-align:left}
+  table.rep th{color:var(--mut);font-weight:600}
+  .srow{padding:9px 6px;border-bottom:1px solid var(--line);cursor:pointer}
+  .srow:hover{background:#1f2d3b}
   #msg{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);padding:12px 18px;border-radius:10px;display:none;max-width:92%;z-index:9}
 </style>
 </head>
@@ -58,7 +70,26 @@
   <div class="steps" id="topNav">
     <button id="navJobs" class="on" onclick="showTab('jobs')">Jobs</button>
     <button id="navStatus" class="sec" onclick="showTab('status')">Status</button>
+    <button id="navReport" class="sec" onclick="showTab('report')">Report</button>
   </div>
+  <section id="reportView" style="display:none">
+    <div class="card">
+      <div class="grid" style="grid-template-columns:1fr 1fr">
+        <label class="mut" style="min-width:0">From<input id="rpFrom" type="date" style="min-width:0"></label>
+        <label class="mut" style="min-width:0">To<input id="rpTo" type="date" style="min-width:0"></label>
+        <label class="mut" style="grid-column:1/-1">Group<select id="rpGroup" style="width:100%;font:inherit;padding:12px;border-radius:10px;background:#0c131b;color:var(--text);border:1px solid var(--line)">
+          <option value="day">Date-wise</option><option value="month">Month-wise</option></select></label>
+      </div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap">
+        <button class="sec" onclick="rpPreset('today')">Today</button>
+        <button class="sec" onclick="rpPreset('7')">7 days</button>
+        <button class="sec" onclick="rpPreset('month')">This month</button>
+        <button class="sec" onclick="rpPreset('year')">This year</button>
+        <button style="flex:1" onclick="loadReport()">Show</button>
+      </div>
+    </div>
+    <div id="rpBody"></div>
+  </section>
   <section id="statusView" style="display:none">
     <div class="card row" style="justify-content:space-between">
       <span class="mut" id="stInfo">Reel status (last 2 days in ERP + all pending)</span>
@@ -93,6 +124,16 @@
   </section>
 </main>
 <div id="msg"></div>
+<div id="scanner" class="scanner" aria-hidden="true">
+  <div class="sheet">
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <b>Scan Reel QR / Barcode</b>
+      <button class="sec" onclick="closeScanner()">&times;</button>
+    </div>
+    <div id="qrReader"></div>
+    <div class="mut" id="scanNote" style="margin-top:8px">Point the camera at the reel QR / barcode. Reel No or Mill No is filled and searched automatically.</div>
+  </div>
+</div>
 
 <script>
 var PLY_NAMES={3:["Top","Flute","Bottom"],5:["Top","Flute-1","Middle","Flute-2","Bottom"],
@@ -160,7 +201,10 @@ var API={
   deleteEntry:function(id,pp){return sb("rc_delete_entry",{p_id:id,p_pp:pp})},
   statusList:function(){return sb("rc_status_list",{p_days:2})},
   approveHold:function(ids,pin,mgr){return sb("rc_approve_hold",{p_ids:ids,p_pin:pin,p_manager:mgr})},
-  undoApproval:function(ids){return sb("rc_undo_approval",{p_ids:ids})}
+  undoApproval:function(ids){return sb("rc_undo_approval",{p_ids:ids})},
+  searchReels:function(f){return sb("rc_search_reels",{p_gsm:f.gsm,p_bf:f.bf,p_size:f.size,p_shade:f.shade,
+    p_wt_min:f.wmin===""?null:Number(f.wmin),p_wt_max:f.wmax===""?null:Number(f.wmax)})},
+  report:function(fr,to,g){return sb("rc_consumption_report",{p_from:fr||null,p_to:to||null,p_group:g})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -197,10 +241,105 @@ function openJob(pp){
 function back(){ job=null; $("jobView").style.display="none"; $("listView").style.display="block"; loadJobs() }
 function showTab(t){
   $("navJobs").className=t==="jobs"?"on":"sec"; $("navStatus").className=t==="status"?"on":"sec";
+  $("navReport").className=t==="report"?"on":"sec";
   $("statusView").style.display=t==="status"?"block":"none";
+  $("reportView").style.display=t==="report"?"block":"none";
   $("listView").style.display=(t==="jobs"&&!job)?"block":"none";
   $("jobView").style.display=(t==="jobs"&&job)?"block":"none";
   if(t==="status") loadStatus();
+  if(t==="report" && !$("rpFrom").value) rpPreset("7");
+}
+
+/* ---------- Report tab (date-wise / month-wise consumption) ---------- */
+function ymd(d){return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)}
+function rpPreset(p){
+  var t=new Date(), f=new Date();
+  if(p==="7") f.setDate(t.getDate()-6);
+  if(p==="month") f=new Date(t.getFullYear(),t.getMonth(),1);
+  if(p==="year") f=new Date(t.getFullYear(),3,1) > t ? new Date(t.getFullYear()-1,3,1) : new Date(t.getFullYear(),3,1);
+  $("rpFrom").value=ymd(f); $("rpTo").value=ymd(t);
+  $("rpGroup").value=(p==="year")?"month":"day";
+  loadReport();
+}
+function kg(v){return (Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:1})}
+function loadReport(){
+  if(busy)return; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
+  call("report",[$("rpFrom").value,$("rpTo").value,$("rpGroup").value],function(r){
+    var T=r.total||{};
+    var h='<div class="card"><div class="mut">'+esc(r.from)+' to '+esc(r.to)+'</div>'+
+      '<div style="font-size:26px;font-weight:800;margin:4px 0">'+kg(T.kg)+' kg</div>'+
+      '<div class="mut">'+(T.reels||0)+' reels &middot; '+(T.jobs||0)+' jobs &middot; '+(T.inErp||0)+' reels in ERP</div></div>';
+    h+='<div class="card"><b>'+(r.group==="month"?"Month-wise":"Date-wise")+'</b><table class="rep"><tr><th>'+(r.group==="month"?"Month":"Date")+
+       '</th><th>Reels</th><th>Jobs</th><th>Consumed kg</th></tr>'+
+       (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td><td>'+x.reels+'</td><td>'+x.jobs+'</td><td><b>'+kg(x.kg)+'</b></td></tr>'}).join("")+
+       ((r.rows||[]).length?'':'<tr><td colspan="4" class="mut">No consumption in this period.</td></tr>')+'</table></div>';
+    if((r.byGrade||[]).length) h+='<div class="card"><b>By paper (GSM / BF)</b><table class="rep"><tr><th>GSM / BF</th><th>Reels</th><th>Consumed kg</th></tr>'+
+       r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF</td><td>'+x.reels+'</td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
+    if((r.byJob||[]).length) h+='<div class="card"><b>By job</b><table class="rep"><tr><th>WO</th><th>Reels</th><th>Consumed kg</th></tr>'+
+       r.byJob.map(function(x){return '<tr><td>'+esc(x.wo)+'<div class="mut">'+esc(x.customer||"")+' &middot; '+esc(x.last)+'</div></td><td>'+x.reels+'</td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
+    $("rpBody").innerHTML=h;
+  });
+}
+
+/* ---------- QR / barcode scanner (same library + parsing as Reel Stock app) ---------- */
+var qrScanner=null, qrRunning=false;
+function normalizeScannedCode(raw){
+  var s=String(raw||"").trim(); if(!s) return {ok:false,message:"No code value was detected."};
+  if(/^\d+(?:\.0+)?$/.test(s)) return {ok:true,value:String(parseInt(Number(s),10))};
+  var c=s.replace(/reel\s*(no|number)?\s*[:#=\-]?\s*/ig," ").replace(/mill\s*(reel\s*)?(no|number)?\s*[:#=\-]?\s*/ig," ").trim();
+  if(/^\d+(?:\.0+)?$/.test(c)) return {ok:true,value:String(parseInt(Number(c),10))};
+  var nums=s.match(/\d{3,}/g)||[], u=nums.filter(function(v,i){return nums.indexOf(v)===i});
+  if(u.length===1) return {ok:true,value:u[0]};
+  return {ok:false,message:"Code has multiple / non-numeric values. Type the Reel / Mill No."};
+}
+async function openScanner(){
+  $("scanner").classList.add("show"); $("scanNote").textContent="Point the camera at the reel QR / barcode.";
+  if(typeof Html5Qrcode==="undefined"){ $("scanNote").textContent="Scanner could not load. Check internet and try again."; return }
+  if(qrRunning) return;
+  try{
+    qrScanner=new Html5Qrcode("qrReader");
+    var F=window.Html5QrcodeSupportedFormats||{};
+    var cfg={fps:10,qrbox:{width:250,height:180},aspectRatio:1.333333,
+      formatsToSupport:[F.QR_CODE,F.CODE_128,F.CODE_39,F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E].filter(function(x){return x!==undefined})};
+    await qrScanner.start({facingMode:"environment"},cfg,onScan,function(){});
+    qrRunning=true;
+  }catch(err){ qrRunning=false; $("scanNote").textContent="Camera could not start. Allow camera permission and try again. "+(err&&err.message?err.message:err) }
+}
+async function closeScanner(){
+  if(qrScanner&&qrRunning){ try{await qrScanner.stop()}catch(e){} try{qrScanner.clear()}catch(e){} }
+  qrRunning=false; qrScanner=null; $("scanner").classList.remove("show");
+}
+async function onScan(text){
+  var p=normalizeScannedCode(text);
+  if(!p.ok){ $("scanNote").textContent=p.message; return }
+  await closeScanner();
+  var i=$("reelIn"); if(!i){ toast("Scanned "+p.value+" — open a ply (Load reel) first","bad"); return }
+  i.value=p.value; toast("Scanned: "+p.value,"ok"); findReel();
+}
+
+/* ---------- search by spec (GSM / BF / Size / Shade / Weight) ---------- */
+var specOpen=false, specF={gsm:"",bf:"",size:"",shade:"",wmin:"",wmax:""}, specRes=null;
+function specToggle(){ specOpen=!specOpen; specRes=null; draw() }
+function specRead(){ ["gsm","bf","size","shade","wmin","wmax"].forEach(function(k){var e=$("sp_"+k); if(e) specF[k]=e.value.trim()}) }
+function specSearch(){
+  specRead(); if(busy)return;
+  call("searchReels",[specF],function(r){ specRes=r.ok?r:{err:r.msg}; draw() });
+}
+function specPick(reelNo){ specOpen=false; specRes=null; var i=$("reelIn"); draw(); i=$("reelIn"); if(i){i.value=reelNo; findReel()} }
+function specPanel(){
+  if(!specOpen) return '';
+  var inp=function(k,ph,mode){return '<input id="sp_'+k+'" placeholder="'+ph+'" inputmode="'+(mode||"text")+'" value="'+esc(specF[k])+'" onkeydown="if(event.key===\'Enter\')specSearch()">'};
+  var h='<div class="find"><div class="grid">'+inp("gsm","GSM","numeric")+inp("bf","BF","numeric")+inp("size","Size cm","decimal")+
+        inp("shade","Shade")+inp("wmin","Wt min kg","decimal")+inp("wmax","Wt max kg","decimal")+'</div>'+
+        '<div class="row" style="margin-top:8px"><button style="flex:1" onclick="specSearch()">Search reels</button>'+
+        '<button class="sec" onclick="specToggle()">Close</button></div>';
+  if(specRes&&specRes.err) h+='<div class="mut" style="margin-top:8px;color:#ffb3ad">'+esc(specRes.err)+'</div>';
+  if(specRes&&specRes.reels){
+    h+='<div class="mut" style="margin-top:8px">'+specRes.total+' reel(s) found'+(specRes.total>specRes.reels.length?' (showing '+specRes.reels.length+', lowest weight first)':'')+' &mdash; tap to select</div>';
+    h+=specRes.reels.map(function(x){return '<div class="srow" onclick="specPick(\''+esc(x.reelNo)+'\')"><b>'+esc(x.reelNo)+'</b> <span class="mut">mill '+esc(x.millNo)+'</span>'+
+      (x.qcHold?' <span class="pill warn">QC Hold (ERP)</span>':'')+'<br><span class="mut">'+esc(x.gsm)+' GSM &middot; '+esc(x.bf)+' BF &middot; '+esc(x.size)+' cm &middot; '+esc(x.shade)+' &middot; </span><b>'+kg(x.wt)+' kg</b></div>'}).join("");
+  }
+  return h+'</div>';
 }
 
 /* ---------- Status tab ---------- */
@@ -334,7 +473,10 @@ function reelCard(e){
 }
 function finder(){
   var h='<div class="row" style="margin-top:8px"><input id="reelIn" inputmode="numeric" placeholder="Reel No or Mill No" '+
-        'onkeydown="if(event.key===\'Enter\')findReel()"><button onclick="findReel()">Search</button></div>';
+        'onkeydown="if(event.key===\'Enter\')findReel()"><button onclick="findReel()">Search</button>'+
+        '<button class="sec" title="Scan QR / barcode" onclick="openScanner()">&#128247; Scan</button></div>'+
+        (specOpen?'':'<div style="margin-top:6px"><button class="sec" style="width:100%" onclick="specToggle()">Search by GSM / BF / Size / Shade / Weight</button></div>')+
+        specPanel();
   if(found && found.multi){
     h+='<div class="find">More than one reel found, choose the correct one:'+found.multi.map(function(x,i){
       return '<div style="margin-top:6px"><button class="sec" onclick="chooseReel('+i+')">'+esc(x.reelNo)+' / mill '+esc(x.millNo)+
