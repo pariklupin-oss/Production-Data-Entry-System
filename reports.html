@@ -136,7 +136,7 @@ async function loadData(){const fr=$('dfrom').value,to=$('dto').value;if(!fr||!t
  ROWS=(DATA.jobs||[]).map(x=>Object.assign({},x.d,{_id:x.id,_closed:x.closed,_upd:x.upd}));
  REPS=DATA.reports||[];HOLD={};for(const h of (DATA.holds||[]))HOLD[h.wo]=h;
  const at=new Date(DATA.at);$('stamp').textContent=`Data: ${at.toLocaleString('en-IN')}  ·  ${ROWS.length} rows  ·  ${dmy(fr)} to ${dmy(to)}`;
- BUILT={};prepare();drawTabs();show(CUR)}
+ BUILT={};RC=null;RCK='';prepare();drawTabs();show(CUR)}
 
 // ---------- WO groups ----------
 let WO={},HOLD={};
@@ -273,11 +273,35 @@ R.all={name:'All Data',build(){
  return {note:'All loaded data (selected range + all open jobs). Use search to find anything.',kpis:[['Rows',det.length]],
   sum:null,det:{title:'All rows',cols:cols,rows:det}}}};
 
-const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','hold','all'];
+// ---------- Reel Consumption (ERP reel-wise, Corrugation SHIFT date) — sirf tab kholne par 1 call ----------
+let RC=null,RCK='',RCBUSY=false;
+const t3=v=>Math.round(num(v)*1000)/1000;
+R.reel={name:'Reel Consumption',build(){
+ const det={title:'Job-wise (shift date × WO)',cols:['Shift Date','WO No','Customer','Reels','Tonnes','Meters','Kg'],rows:[]};
+ if(!RC)return {note:RCBUSY?'Loading reel consumption…':'Open this tab to load reel consumption.',kpis:[],sum:null,det};
+ const days=RC.rows||[],T=RC.total||{};
+ const mo={};for(const x of days){const k=String(x.k||'').slice(0,7)||String(x.period||'').slice(6,10)+'-'+String(x.period||'').slice(3,5);
+  const m=mo[k]=mo[k]||[k,0,0,0,0];m[1]++;m[2]+=num(x.kg);m[3]+=num(x.meters)}
+ const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+ const mrows=Object.values(mo).sort((a,b)=>a[0].localeCompare(b[0])).map(m=>[MN[+m[0].slice(5,7)-1]+' '+m[0].slice(0,4),m[1],t3(m[2]/1000),Math.round(m[3]),Math.round(m[2])]);
+ const drows=days.map(x=>[x.period,num(x.jobs),num(x.reels),t3(x.tons),num(x.meters),num(x.kg)]);
+ det.rows=(RC.byJobDay||[]).map(x=>[x.period,x.wo,x.customer||'',num(x.reels),t3(x.tons),num(x.meters),num(x.kg)]);
+ return {note:'Paper reel consumption from the ERP Reel Wise Consumption report. Date = Corrugation SHIFT date (Day 08:00–18:30, Night 18:30–05:00; 00:00–07:59 counts in the previous day). Meters = kg × 1000 ÷ GSM ÷ width (m). ERP data syncs every morning 07:30'+(RC.syncedAt?' — last sync '+RC.syncedAt:'')+'.',
+  kpis:[['Tonnes',t3(T.tons)],['Meters',num(T.meters)],['Jobs',num(T.jobs)],['Reels',num(T.reels)],['Days',num(T.days)]],
+  sum:{title:'Month-wise',cols:['Month','Days','Tonnes','Meters','Kg'],rows:mrows},
+  extra:[{title:'Date-wise (shift date)',cols:['Date','Jobs','Reels','Tonnes','Meters','Kg'],rows:drows}],
+  det}}};
+async function loadReel(){const fr=$('dfrom').value,to=$('dto').value,k=fr+'|'+to;if(RCBUSY||RCK===k)return;
+ RCBUSY=true;RCK=k;RC=null;delete BUILT.reel;if(CUR==='reel')render();
+ try{RC=await rpc('rc_erp_cons_report',{p_from:fr,p_to:to,p_group:'day'})}
+ catch(e){RC=null;msg('Reel consumption: '+e.message+' — click Load to try again',1)}
+ finally{RCBUSY=false;delete BUILT.reel;drawTabs();if(CUR==='reel')show('reel')}}
+
+const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','hold','reel','all'];
 function get(id){if(!BUILT[id])BUILT[id]=R[id].build();return BUILT[id]}
-function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:get(id).det.rows.length;
+function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:(id==='reel'&&!RC)?'·':get(id).det.rows.length;
  return `<button id="tb_${id}" class="${id===CUR?'on':''}" onclick="show('${id}')">${esc(R[id].name)}<span class="n">${n}</span></button>`}).join('')}
-const NUMC=/Colour changes|Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Entries|Job$|Jobs|^Pending$|^Ready$|lots|Lots|Hrs|Speed|Meter|Tonnage|min|Rows|Done/;
+const NUMC=/Colour changes|Qty|qty|Prod$|Input|Production|Rej|Balance|%|Days|Entries|Job$|Jobs|^Pending$|^Ready$|lots|Lots|Hrs|Speed|Meter|Tonnage|min|Rows|Done|^Tonnes$|^Kg$|^Reels$/;
 function filt(id,t){const q=($('q')?.value||'').toLowerCase().trim(),f1=$('f1')?.value||'';
  const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');
  return t.rows.filter(r=>(!q||r.join(' ').toLowerCase().includes(q))&&(!f1||r[pi]===f1||r[mi]===f1))}
@@ -307,10 +331,11 @@ function show(id){CUR=id;document.querySelectorAll('nav button').forEach(b=>b.cl
  const r=get(id);const opts=new Set();for(const t of [r.det]){const pi=t.cols.indexOf('Process'),mi=t.cols.indexOf('Machine');for(const x of t.rows){if(pi>=0&&x[pi])opts.add(x[pi]);if(mi>=0&&x[mi])opts.add(x[mi])}}
  $('panel').innerHTML=`<div class="tools"><input type="search" id="q" placeholder="Search: WO / JC / customer / process…" oninput="render()">
  ${opts.size?`<select id="f1" onchange="render()"><option value="">All processes / machines</option>${[...opts].sort().map(o=>`<option>${esc(o)}</option>`).join('')}</select>`:''}
- <button class="btn g" onclick="cfClear()">✕ Clear filters</button><button class="btn" onclick="exportOne('${id}')">⬇ Excel</button></div><div id="body"></div>`;render()}
+ <button class="btn g" onclick="cfClear()">✕ Clear filters</button><button class="btn" onclick="exportOne('${id}')">⬇ Excel</button></div><div id="body"></div>`;render();
+ if(id==='reel')loadReel()}
 function render(){const id=CUR,r=get(id);const det=filt(id,r.det);
  $('body').innerHTML=`<div class="note">${esc(r.note)}</div><div class="kpis">${r.kpis.map(k=>`<div class="kpi"><b>${typeof k[1]==='number'?k[1].toLocaleString('en-IN'):esc(k[1])}</b><span>${esc(k[0])}</span></div>`).join('')}</div>
- ${r.sum?table(r.sum,id+'_s',r.sum.rows):''}${table(r.det,id+'_d',det)}`}
+ ${r.sum?table(r.sum,id+'_s',r.sum.rows):''}${(r.extra||[]).map((t,i)=>table(t,id+'_x'+i,t.rows)).join('')}${table(r.det,id+'_d',det)}`}
 function sheet(t){const k=t.cols.indexOf('Action');if(k<0)return XLSX.utils.aoa_to_sheet([t.cols,...t.rows]);
  const cut=a=>a.filter((_,i)=>i!==k);return XLSX.utils.aoa_to_sheet([cut(t.cols),...t.rows.map(cut)])}
 function actBtn(v){if(!v||!v.wo)return '';const w=esc(v.wo).replace(/'/g,'');
@@ -337,12 +362,14 @@ function fname(x){return `Starish_${x}_${dmy($('dfrom').value)}_to_${dmy($('dto'
 function exportOne(id){if(!window.XLSX){msg('Excel library did not load — check the internet connection',1);return}
  const r=get(id),wb=XLSX.utils.book_new();const det={title:r.det.title,cols:r.det.cols,rows:cfApply(id+'_d',r.det.cols,filt(id,r.det))};
  if(r.sum)XLSX.utils.book_append_sheet(wb,sheet({title:r.sum.title,cols:r.sum.cols,rows:cfApply(id+'_s',r.sum.cols,r.sum.rows)}),r.sum.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
+ (r.extra||[]).forEach((t,i)=>XLSX.utils.book_append_sheet(wb,sheet({title:t.title,cols:t.cols,rows:cfApply(id+'_x'+i,t.cols,t.rows)}),t.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' ')));
  XLSX.utils.book_append_sheet(wb,sheet(det),det.title.slice(0,31).replace(/[\\\/\?\*\[\]:]/g,' '));
  XLSX.writeFile(wb,fname(R[id].name.replace(/\W+/g,'_')))}
 function exportAll(){if(!window.XLSX){msg('Excel library did not load',1);return}if(!DATA){msg('Please load the data first',1);return}
  const wb=XLSX.utils.book_new();
  for(const id of ORDER){const r=get(id),n=R[id].name.replace(/[\\\/\?\*\[\]:]/g,' ');
   if(id==='shift'){XLSX.utils.book_append_sheet(wb,sheet(r.sum),'Boardline');XLSX.utils.book_append_sheet(wb,sheet(r.det),'Production shift');continue}
+  if(id==='reel'){if(!RC)continue;XLSX.utils.book_append_sheet(wb,sheet(r.sum),'Reel month-wise');XLSX.utils.book_append_sheet(wb,sheet(r.extra[0]),'Reel date-wise');XLSX.utils.book_append_sheet(wb,sheet(r.det),'Reel job-wise');continue}
   if(r.sum)XLSX.utils.book_append_sheet(wb,sheet(r.sum),(n+' sum').slice(0,31));XLSX.utils.book_append_sheet(wb,sheet(r.det),n.slice(0,31))}
  XLSX.writeFile(wb,fname('All_Reports'))}
 start();
