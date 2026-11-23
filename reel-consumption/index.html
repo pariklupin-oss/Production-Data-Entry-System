@@ -221,7 +221,8 @@ var API={
   undoApproval:function(ids){return sb("rc_undo_approval",{p_ids:ids})},
   searchReels:function(f){return sb("rc_search_reels",{p_gsm:f.gsm,p_bf:f.bf,p_size:f.size,p_shade:f.shade,
     p_wt_min:f.wmin===""?null:Number(f.wmin),p_wt_max:f.wmax===""?null:Number(f.wmax)})},
-  report:function(fr,to,g){return sb("rc_erp_cons_report",{p_from:fr||null,p_to:to||null,p_group:g})}
+  report:function(fr,to,g){return sb("rc_erp_cons_report",{p_from:fr||null,p_to:to||null,p_group:g})},
+  jobReels:function(wo){return sb("rc_job_reels",{p_wo:wo})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -298,7 +299,7 @@ function kg(v){return (Number(v)||0).toLocaleString("en-IN",{maximumFractionDigi
 function tn(v){return (Number(v)||0).toLocaleString("en-IN",{minimumFractionDigits:3,maximumFractionDigits:3})}
 function mt(v){return (Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:0})}
 function loadReport(){
-  if(busy)return; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
+  if(busy)return; JOBREELS={}; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
   call("report",[$("rpFrom").value,$("rpTo").value,$("rpGroup").value],function(r){
     var T=r.total||{};
     var h='<div class="card"><div class="mut">ERP Reel Consumption report &middot; '+esc(r.from)+' to '+esc(r.to)+'</div>'+
@@ -317,7 +318,8 @@ function loadReport(){
     if(jd.length){ var last=null;
       h+='<table class="rep"><tr><th>WO</th><th>Reels</th><th>Tonnes</th><th>Meters</th></tr>'+
         jd.map(function(x){var s=''; if(x.period!==last){last=x.period; s='<tr><td colspan="4" style="text-align:left;color:var(--acc);font-weight:700;padding-top:12px">'+esc(x.period)+'</td></tr>'}
-          return s+'<tr><td>'+esc(x.wo)+'<div class="mut">'+esc(x.customer||"")+'</div></td><td>'+x.reels+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table>';
+          return s+'<tr class="srow" onclick="toggleJobReels(this,\''+esc(x.wo)+'\')"><td><span style="color:var(--acc)">&#9656;</span> <b>'+esc(x.wo)+'</b><div class="mut">'+esc(x.customer||"")+'</div></td><td>'+x.reels+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table>'+
+        '<div class="mut" style="margin-top:6px">Tap a WO to see all its reels.</div>';
     } else h+='<div class="mut" style="margin-top:6px">No job entries in this period.</div>';
     h+='</div>';
     if((r.byGsmBf||[]).length) h+='<div class="card"><b>By GSM / BF (ERP)</b><table class="rep"><tr><th>GSM / BF</th><th>Tonnes</th><th>Meters</th></tr>'+
@@ -327,6 +329,32 @@ function loadReport(){
     h+='<div class="mut" style="margin:0 4px 12px">Meters = kg &times; 1000 &divide; GSM &divide; width (m), width = size cm &divide; 100.</div>';
     $("rpBody").innerHTML=h;
   });
+}
+
+/* ---------- Report: WO tap -> us job ki reels (server se sirf us job ka data, cache) ---------- */
+var JOBREELS={};
+function jobReelsHtml(r){
+  var rows=(r&&r.reels)||[];
+  if(!rows.length) return '<span class="mut">No reels found for this WO.</span>';
+  var stCls=function(s){return /^In ERP/.test(s)?'ok':/Check ERP/.test(s)?'bad':'warn'};
+  return '<div class="mut" style="margin-bottom:4px">'+rows.length+' reels &middot; in ERP: '+tn((Number(r.totalKg)||0)/1000)+' t &middot; '+mt(r.totalM)+' m</div>'+
+    rows.map(function(x){return '<div style="padding:7px 0;border-top:1px solid var(--line)">'+
+      '<b>Reel '+esc(x.reelNo)+'</b> <span class="mut">mill '+esc(x.millNo||"-")+' &middot; ply '+esc(x.ply||"-")+'</span> '+
+      '<span class="pill '+stCls(x.status||"")+'">'+esc(x.status||"")+'</span><br>'+
+      '<span class="mut">'+esc(x.gsm||"")+' GSM / '+esc(x.bf||"")+' BF / '+esc(x.size||"")+' cm / '+esc(x.shade||"")+' &middot; '+esc(x.date||"")+'</span><br>'+
+      'Consumed <b>'+kg(x.kg)+' kg</b> &middot; <b>'+mt(x.meters)+' m</b>'+
+      (x.note?'<br><span class="mut" style="color:#ffd58a">'+esc(String(x.note).slice(0,140))+'</span>':'')+'</div>'}).join("");
+}
+function toggleJobReels(tr,wo){
+  var nx=tr.nextElementSibling;
+  if(nx&&nx.classList.contains("jr-detail")){ nx.remove(); return }
+  var d=document.createElement("tr"); d.className="jr-detail";
+  d.innerHTML='<td colspan="4" style="text-align:left;background:#0c131b;border-radius:8px"><span class="mut">Loading reels...</span></td>';
+  tr.parentNode.insertBefore(d,nx);
+  var show=function(r){ d.firstChild.innerHTML=jobReelsHtml(r) };
+  if(JOBREELS[wo]){ show(JOBREELS[wo]); return }
+  API.jobReels(wo).then(function(r){ JOBREELS[wo]=r; show(r) })
+    .catch(function(e){ d.firstChild.innerHTML='<span style="color:#ffb3ad">'+esc(e&&e.message?e.message:String(e))+'</span>' });
 }
 
 /* ---------- QR / barcode scanner (same library + parsing as Reel Stock app) ---------- */
