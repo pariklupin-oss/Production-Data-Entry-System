@@ -75,7 +75,20 @@
     <button id="navReport" class="sec" onclick="showTab('report')">Report</button>
   </div>
   <section id="reportView" style="display:none">
-    <div class="card">
+    <div class="steps" style="margin-bottom:8px">
+      <button id="rpModeRange" class="on" onclick="rpMode('range')">Date range</button>
+      <button id="rpModeDaily" class="sec" onclick="rpMode('daily')">Daily</button>
+    </div>
+    <div class="card" id="rpDailyCard" style="display:none">
+      <div class="row" style="flex-wrap:wrap">
+        <label class="mut" style="flex:1;min-width:0">Shift date<input id="rpDay" type="date" style="min-width:0"></label>
+        <button class="sec" onclick="rpDayShift(-1)">&#9664;</button>
+        <button class="sec" onclick="rpDayShift(1)">&#9654;</button>
+        <button onclick="loadDaily()">Show</button>
+      </div>
+      <div class="mut" style="margin-top:6px">Shift date: Day 08:00-18:30, Night 18:30-05:00 (00:00-07:59 = previous day)</div>
+    </div>
+    <div class="card" id="rpRangeCard">
       <div class="grid" style="grid-template-columns:1fr 1fr">
         <label class="mut" style="min-width:0">From<input id="rpFrom" type="date" style="min-width:0"></label>
         <label class="mut" style="min-width:0">To<input id="rpTo" type="date" style="min-width:0"></label>
@@ -222,7 +235,9 @@ var API={
   searchReels:function(f){return sb("rc_search_reels",{p_gsm:f.gsm,p_bf:f.bf,p_size:f.size,p_shade:f.shade,
     p_wt_min:f.wmin===""?null:Number(f.wmin),p_wt_max:f.wmax===""?null:Number(f.wmax)})},
   report:function(fr,to,g){return sb("rc_erp_cons_report",{p_from:fr||null,p_to:to||null,p_group:g})},
-  jobReels:function(wo){return sb("rc_job_reels",{p_wo:wo})}
+  jobReels:function(wo){return sb("rc_job_reels",{p_wo:wo})},
+  woFlags:function(wos){return sb("rc_wo_flags",{p_wos:wos})},
+  daily:function(d){return sb("rc_daily_report",{p_day:d||null})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -298,9 +313,10 @@ function rpPreset(p){
 function kg(v){return (Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:1})}
 function tn(v){return (Number(v)||0).toLocaleString("en-IN",{minimumFractionDigits:3,maximumFractionDigits:3})}
 function mt(v){return (Number(v)||0).toLocaleString("en-IN",{maximumFractionDigits:0})}
+var RPREQ=0, RPMODE="range";
 function loadReport(){
-  if(busy)return; JOBREELS={}; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
-  call("report",[$("rpFrom").value,$("rpTo").value,$("rpGroup").value],function(r){
+  var my=++RPREQ; RPMODE="range"; JOBREELS={}; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
+  API.report($("rpFrom").value,$("rpTo").value,$("rpGroup").value).catch(function(e){if(my===RPREQ)$("rpBody").innerHTML='<div class="card" style="color:#ffb3ad">'+esc(e&&e.message?e.message:String(e))+'</div>';throw e}).then(function(r){ if(my!==RPREQ)return;
     var T=r.total||{};
     var h='<div class="card"><div class="mut">ERP Reel Consumption report &middot; '+esc(r.from)+' to '+esc(r.to)+'</div>'+
       '<div class="row" style="gap:18px;flex-wrap:wrap;margin:6px 0">'+
@@ -318,8 +334,8 @@ function loadReport(){
     if(jd.length){ var last=null;
       h+='<table class="rep"><tr><th>WO</th><th>Reels</th><th>Tonnes</th><th>Meters</th></tr>'+
         jd.map(function(x){var s=''; if(x.period!==last){last=x.period; s='<tr><td colspan="4" style="text-align:left;color:var(--acc);font-weight:700;padding-top:12px">'+esc(x.period)+'</td></tr>'}
-          return s+'<tr class="srow" onclick="toggleJobReels(this,\''+esc(x.wo)+'\')"><td><span style="color:var(--acc)">&#9656;</span> <b>'+esc(x.wo)+'</b><div class="mut">'+esc(x.customer||"")+'</div></td><td>'+x.reels+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table>'+
-        '<div class="mut" style="margin-top:6px">Tap a WO to see all its reels.</div>';
+          return s+'<tr class="srow" data-wo="'+esc(x.wo)+'" onclick="toggleJobReels(this,\''+esc(x.wo)+'\')"><td><span style="color:var(--acc)">&#9656;</span> <b class="wo">'+esc(x.wo)+'</b><span class="woflag"></span><div class="mut">'+esc(x.customer||"")+'</div></td><td>'+x.reels+'</td><td><b>'+tn(x.tons)+'</b></td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table>'+
+        '<div class="mut" style="margin-top:6px">Tap a WO to see all its reels. <span style="color:#ff6b6b">&#9632;</span> Check ERP &middot; <span style="color:#ffa94d">&#9632;</span> QC Hold &middot; <span style="color:#ffd43b">&#9632;</span> waiting / pending / loaded</div>';
     } else h+='<div class="mut" style="margin-top:6px">No job entries in this period.</div>';
     h+='</div>';
     if((r.byGsmBf||[]).length) h+='<div class="card"><b>By GSM / BF (ERP)</b><table class="rep"><tr><th>GSM / BF</th><th>Tonnes</th><th>Meters</th></tr>'+
@@ -328,6 +344,78 @@ function loadReport(){
        r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF / '+esc(x.size)+' cm<div class="mut">'+esc(x.shade)+(x.rm?' &middot; '+esc(x.rm):'')+'</div></td><td>'+tn(x.tons!=null?x.tons:(Number(x.kg)||0)/1000)+'</td><td>'+mt(x.meters)+'</td></tr>'}).join("")+'</table></div>';
     h+='<div class="mut" style="margin:0 4px 12px">Meters = kg &times; 1000 &divide; GSM &divide; width (m), width = size cm &divide; 100.</div>';
     $("rpBody").innerHTML=h;
+    flagWos(jd.map(function(x){return x.wo}));
+  });
+}
+
+/* ---------- WO ka rang: jis job me reels atki hain (server se sirf in WOs ka count) ---------- */
+var FLAG_COL={check:"#ff6b6b",qc:"#ffa94d",wait:"#ffd43b"};
+function woFlagInfo(f){
+  if(!f) return null;
+  var parts=[], col=null;
+  if(f.check){parts.push(f.check+" Check ERP"); col=col||FLAG_COL.check}
+  if(f.qc){parts.push(f.qc+" QC Hold"); col=col||FLAG_COL.qc}
+  if(f.wait){parts.push(f.wait+" waiting")}
+  if(f.pending){parts.push(f.pending+" pending")}
+  if(f.loaded){parts.push(f.loaded+" wt pending")}
+  if(!parts.length) return null;
+  return {col:col||FLAG_COL.wait, text:parts.join(", ")};
+}
+function flagWos(wos){
+  var u={}; wos.forEach(function(w){if(w)u[w]=1}); var list=Object.keys(u); if(!list.length) return;
+  API.woFlags(list).then(function(F){ F=F||{};
+    [].forEach.call(document.querySelectorAll("#rpBody tr[data-wo]"),function(tr){
+      var i=woFlagInfo(F[tr.getAttribute("data-wo")]); if(!i) return;
+      var b=tr.querySelector(".wo"); if(b){b.style.color=i.col; b.style.background=i.col+"22"; b.style.padding="1px 6px"; b.style.borderRadius="6px"}
+      var s=tr.querySelector(".woflag"); if(s) s.innerHTML=' <span style="font-size:12px;color:'+i.col+'">&#9888; '+esc(i.text)+'</span>';
+    });
+  }).catch(function(){ /* SQL 14 abhi nahi chala to bina rang ke */ });
+}
+
+/* ---------- Daily report (ek shift date, sirf us din ka data) ---------- */
+function rpMode(m){
+  $("rpModeRange").className=m==="range"?"on":"sec"; $("rpModeDaily").className=m==="daily"?"on":"sec";
+  $("rpRangeCard").style.display=m==="range"?"block":"none"; $("rpDailyCard").style.display=m==="daily"?"block":"none";
+  $("rpBody").innerHTML="";
+  if(m==="daily"){ if(!$("rpDay").value){var y=new Date(); if(y.getHours()<8)y.setDate(y.getDate()-1); $("rpDay").value=ymd(y)} loadDaily() }
+  else loadReport();
+}
+function rpDayShift(n){ var v=$("rpDay").value; var d=v?new Date(v+"T12:00:00"):new Date(); d.setDate(d.getDate()+n); $("rpDay").value=ymd(d); loadDaily() }
+var ST_COL={"Check ERP":"#ff6b6b","QC Hold":"#ffa94d","Waiting":"#ffd43b","Loaded":"#74c0fc","Production entry pending":"#ffd43b","Ready (push me)":"#8ce99a"};
+function loadDaily(){
+  var my=++RPREQ; RPMODE="daily"; JOBREELS={}; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
+  API.daily($("rpDay").value).catch(function(e){if(my===RPREQ)$("rpBody").innerHTML='<div class="card" style="color:#ffb3ad">'+esc(e&&e.message?e.message:String(e))+'</div>';throw e}).then(function(r){ if(my!==RPREQ)return;
+    var S=r.summary||{}, E=r.inErp||{}, G=r.groups||[], st=r.stuck||[], jobs=r.jobs||[];
+    var h='<div class="card"><div class="mut">Daily &middot; shift date <b>'+esc(r.day)+' '+esc(r.dayName||"")+'</b>'+(r.syncedAt?' &middot; ERP synced '+esc(r.syncedAt):'')+'</div>'+
+      '<div class="row" style="gap:18px;flex-wrap:wrap;margin:6px 0">'+
+        '<div><div class="mut">Jobs</div><div style="font-size:24px;font-weight:800">'+(S.jobs||0)+'</div></div>'+
+        '<div><div class="mut">Reels</div><div style="font-size:24px;font-weight:800">'+(S.reels||0)+'</div></div>'+
+        '<div><div class="mut">Tonnes</div><div style="font-size:24px;font-weight:800">'+tn(S.tons)+'</div></div>'+
+        '<div><div class="mut">Meters</div><div style="font-size:24px;font-weight:800">'+mt(S.meters)+'</div></div></div>'+
+      '<table class="rep"><tr><th>Status</th><th>Reels</th><th>Tonnes</th></tr>'+
+      '<tr><td><span class="pill ok">In ERP</span></td><td><b>'+(E.reels||0)+'</b></td><td><b>'+tn(E.tons)+'</b></td></tr>'+
+      G.map(function(g){var c=ST_COL[g.status]||"#ced4da";
+        return '<tr><td><span class="pill" style="color:'+c+';border-color:'+c+'">'+esc(g.status)+'</span></td><td><b>'+g.reels+'</b></td><td>'+tn(g.tons)+'</td></tr>'}).join("")+
+      '</table>'+
+      (r.appOnly?'<div class="mut" style="margin-top:6px">'+r.appOnly+' reel ERP me save ho chuki, ERP report agle sync me aayegi.</div>':'')+
+      '<div class="mut" style="margin-top:4px">Loaded = bit weight abhi baaki (kg 0 gina).</div></div>';
+    if(jobs.length){
+      h+='<div class="card"><b>Jobs</b><table class="rep"><tr><th>WO</th><th>Reels</th><th>In ERP</th><th>Tonnes</th></tr>'+
+        jobs.map(function(j){var bad=j.stuck>0;
+          return '<tr class="srow" data-wo="'+esc(j.wo)+'" onclick="toggleJobReels(this,\''+esc(j.wo)+'\')"><td style="text-align:left"><span style="color:var(--acc)">&#9656;</span> <b class="wo">'+esc(j.wo)+'</b><span class="woflag"></span></td><td>'+j.reels+'</td><td>'+
+            (bad?'<span style="color:#ffa94d">'+j.inErp+'</span>':j.inErp)+'</td><td><b>'+tn(j.tons)+'</b></td></tr>'}).join("")+'</table></div>';
+    }
+    h+='<div class="card"><b>Atki reels ('+st.length+')</b>';
+    if(st.length){
+      h+=st.map(function(x){var c=ST_COL[x.status]||"#ced4da";
+        return '<div style="padding:8px 0;border-top:1px solid var(--line)"><b>'+esc(x.wo)+'</b> &middot; Reel <b>'+esc(x.reelNo)+'</b> <span class="mut">ply '+esc(x.ply||"-")+'</span> '+
+          '<span class="pill" style="color:'+c+';border-color:'+c+'">'+esc(x.status)+(x.qc&&x.status!=="QC Hold"?' (QC)':'')+'</span><br>'+
+          '<span class="mut">'+(x.status==="Loaded"?'Loaded '+kg(x.current)+' kg, bit wt baaki':kg(x.kg)+' kg')+'</span>'+
+          (x.note?'<br><span class="mut" style="color:#ffd58a">'+esc(String(x.note).slice(0,160))+'</span>':'')+'</div>'}).join("");
+    } else h+='<div class="mut" style="margin-top:6px">Koi reel atki nahi &#10004;</div>';
+    h+='</div>';
+    $("rpBody").innerHTML=h;
+    flagWos(jobs.map(function(j){return j.wo}));
   });
 }
 
@@ -340,7 +428,7 @@ function jobReelsHtml(r){
   return '<div class="mut" style="margin-bottom:4px">'+rows.length+' reels &middot; in ERP: '+tn((Number(r.totalKg)||0)/1000)+' t &middot; '+mt(r.totalM)+' m</div>'+
     rows.map(function(x){return '<div style="padding:7px 0;border-top:1px solid var(--line)">'+
       '<b>Reel '+esc(x.reelNo)+'</b> <span class="mut">mill '+esc(x.millNo||"-")+' &middot; ply '+esc(x.ply||"-")+'</span> '+
-      '<span class="pill '+stCls(x.status||"")+'">'+esc(x.status||"")+'</span><br>'+
+      '<span class="pill '+stCls(x.status||"")+'">'+esc((x.label&&x.label!==x.status?x.label+(/\(QC\)/.test(x.status)?' (QC)':''):x.status)||"")+'</span><br>'+
       '<span class="mut">'+esc(x.gsm||"")+' GSM / '+esc(x.bf||"")+' BF / '+esc(x.size||"")+' cm / '+esc(x.shade||"")+' &middot; '+esc(x.date||"")+'</span><br>'+
       'Consumed <b>'+kg(x.kg)+' kg</b> &middot; <b>'+mt(x.meters)+' m</b>'+
       (x.note?'<br><span class="mut" style="color:#ffd58a">'+esc(String(x.note).slice(0,140))+'</span>':'')+'</div>'}).join("");
@@ -616,6 +704,7 @@ function installApp(){ if(!installEvt)return; installEvt.prompt();
 [].forEach.call(document.querySelectorAll('input[type=date]'),function(i){
   i.addEventListener('click',function(){try{if(i.showPicker)i.showPicker()}catch(e){}});
 });
+$("rpDay").addEventListener('change',function(){ if($("rpDay").value) loadDaily() });
 
 loadJobs();
 </script>
