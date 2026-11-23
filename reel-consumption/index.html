@@ -198,6 +198,10 @@ var API={
       if(String((d["Machine Name"]||"")+" "+(d["Process Name"]||"")).toUpperCase().indexOf("CORRUGATION")<0)continue;
       var pp=String(d["PP Code"]||"").trim();if(!pp||seen[pp])continue;
       var dt=pDate(d["Production Date"]||d["Date"]);
+      // shift date: Day 08:00-18:30, Night 18:30-05:00 -> start 00:00-07:59 = pichhla din
+      var hm=String(d["Start Time"]||"").match(/^\s*(\d{1,2})[:.](\d{2})\s*([AaPp][Mm])?/);
+      if(dt&&hm){var hh=+hm[1],ap=(hm[3]||"").toLowerCase(); if(ap==="pm"&&hh<12)hh+=12; if(ap==="am"&&hh===12)hh=0;
+        if(hh<8){dt=new Date(dt.getTime()); dt.setDate(dt.getDate()-1);}}
       if(want){ if(fDate(dt)!==want)continue } else if(dt&&dt<cut)continue;
       seen[pp]=1;
       jobs.push({wo:d["WO No"],pp:pp,customer:d["Customer"]||"",model:d["Model Name"]||"",item:d["Item Code"]||"",
