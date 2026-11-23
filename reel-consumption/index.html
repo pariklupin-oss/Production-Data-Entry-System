@@ -204,7 +204,7 @@ var API={
   undoApproval:function(ids){return sb("rc_undo_approval",{p_ids:ids})},
   searchReels:function(f){return sb("rc_search_reels",{p_gsm:f.gsm,p_bf:f.bf,p_size:f.size,p_shade:f.shade,
     p_wt_min:f.wmin===""?null:Number(f.wmin),p_wt_max:f.wmax===""?null:Number(f.wmax)})},
-  report:function(fr,to,g){return sb("rc_consumption_report",{p_from:fr||null,p_to:to||null,p_group:g})}
+  report:function(fr,to,g){return sb("rc_erp_cons_report",{p_from:fr||null,p_to:to||null,p_group:g})}
 };
 function call(fn,args,cb){busy=true;
   Promise.resolve().then(function(){return API[fn].apply(null,args)})
@@ -266,17 +266,18 @@ function loadReport(){
   if(busy)return; $("rpBody").innerHTML='<div class="card mut">Loading...</div>';
   call("report",[$("rpFrom").value,$("rpTo").value,$("rpGroup").value],function(r){
     var T=r.total||{};
-    var h='<div class="card"><div class="mut">'+esc(r.from)+' to '+esc(r.to)+'</div>'+
+    var h='<div class="card"><div class="mut">ERP Reel Consumption report &middot; '+esc(r.from)+' to '+esc(r.to)+'</div>'+
       '<div style="font-size:26px;font-weight:800;margin:4px 0">'+kg(T.kg)+' kg</div>'+
-      '<div class="mut">'+(T.reels||0)+' reels &middot; '+(T.jobs||0)+' jobs &middot; '+(T.inErp||0)+' reels in ERP</div></div>';
+      '<div class="mut">'+(T.days||0)+' days &middot; '+(T.grades||0)+' paper grades'+
+      (r.syncedAt?' &middot; ERP synced '+esc(r.syncedAt):' &middot; not synced yet')+'</div></div>';
     h+='<div class="card"><b>'+(r.group==="month"?"Month-wise":"Date-wise")+'</b><table class="rep"><tr><th>'+(r.group==="month"?"Month":"Date")+
-       '</th><th>Reels</th><th>Jobs</th><th>Consumed kg</th></tr>'+
-       (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td><td>'+x.reels+'</td><td>'+x.jobs+'</td><td><b>'+kg(x.kg)+'</b></td></tr>'}).join("")+
-       ((r.rows||[]).length?'':'<tr><td colspan="4" class="mut">No consumption in this period.</td></tr>')+'</table></div>';
-    if((r.byGrade||[]).length) h+='<div class="card"><b>By paper (GSM / BF)</b><table class="rep"><tr><th>GSM / BF</th><th>Reels</th><th>Consumed kg</th></tr>'+
-       r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF</td><td>'+x.reels+'</td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
-    if((r.byJob||[]).length) h+='<div class="card"><b>By job</b><table class="rep"><tr><th>WO</th><th>Reels</th><th>Consumed kg</th></tr>'+
-       r.byJob.map(function(x){return '<tr><td>'+esc(x.wo)+'<div class="mut">'+esc(x.customer||"")+' &middot; '+esc(x.last)+'</div></td><td>'+x.reels+'</td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
+       '</th><th>Grades</th><th>Consumed kg</th></tr>'+
+       (r.rows||[]).map(function(x){return '<tr><td>'+esc(x.period)+'</td><td>'+x.grades+'</td><td><b>'+kg(x.kg)+'</b></td></tr>'}).join("")+
+       ((r.rows||[]).length?'':'<tr><td colspan="3" class="mut">No consumption in this period (or not synced from ERP yet).</td></tr>')+'</table></div>';
+    if((r.byGsmBf||[]).length) h+='<div class="card"><b>By GSM / BF</b><table class="rep"><tr><th>GSM / BF</th><th>Consumed kg</th></tr>'+
+       r.byGsmBf.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF</td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
+    if((r.byGrade||[]).length) h+='<div class="card"><b>By paper grade (top '+r.byGrade.length+')</b><table class="rep"><tr><th>Grade</th><th>Consumed kg</th></tr>'+
+       r.byGrade.map(function(x){return '<tr><td>'+esc(x.gsm)+' GSM / '+esc(x.bf)+' BF / '+esc(x.size)+' cm<div class="mut">'+esc(x.shade)+' &middot; '+esc(x.rm)+'</div></td><td>'+kg(x.kg)+'</td></tr>'}).join("")+'</table></div>';
     $("rpBody").innerHTML=h;
   });
 }
