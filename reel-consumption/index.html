@@ -388,6 +388,7 @@ var ST_GROUPS=[
   {key:"qcpass",title:"QC OK given — still Hold in ERP (QC pass in CPMS pending)", cls:"warn"},
   {key:"qcload",title:"QC Hold reels loaded — balance weight not entered", cls:"warn"},
   {key:"wait",  title:"Production entry pending in ERP (will go to ERP automatically after entry)", cls:"warn"},
+  {key:"chain", title:"Waiting for previous job (same reel) — goes to ERP automatically after that job", cls:"warn"},
   {key:"ready", title:"Ready for ERP (next auto run)", cls:""},
   {key:"loaded",title:"Loaded — balance weight not entered", cls:""},
   {key:"check", title:"Check ERP — needs a person to look", cls:"bad"},
@@ -396,6 +397,7 @@ function stGroup(e){
   if(e.status==="QC Hold")return e.qcErpHold===false?"ready":"hold";      // ERP me pass ho gayi -> agle run me ERP
   if(e.status==="Pending"&&e.qcHold&&e.qcApprovedBy&&e.qcErpHold!==false)return "qcpass";
   if(e.status==="Loaded"&&e.qcHold&&e.qcErpHold!==false)return "qcload";
+  if(e.status==="Pending"&&/^Waiting for/.test(e.note||""))return "chain";
   if(e.status==="Pending")return /^WAIT/.test(e.note||"")?"wait":"ready";
   if(e.status==="Loaded")return "loaded";
   if(e.status==="Submitted")return "done";
@@ -418,6 +420,7 @@ function renderStatus(){
           ' &middot; '+esc(e.operator||"")+(e.pushedAt?' &middot; ERP '+esc(e.pushedAt):'')+
           (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
           (G.key==="check"&&e.note?'<br><span style="color:#ffb3ad">'+esc(e.note)+'</span>':'')+
+          (G.key==="chain"&&e.note?'<br><span style="color:#ffd58a">'+esc(e.note)+'</span>':'')+
           (G.key==="hold"?' <button style="padding:6px 12px;margin-left:6px" onclick="approveReel(\''+esc(pp)+'\',\''+esc(e.id)+'\')">QC OK</button>':'')+'</div>'});
       if(G.key==="hold") html+='<div class="row" style="margin-top:8px;flex-wrap:wrap">'+
         '<input id="mgr_'+esc(pp)+'" placeholder="Approver name" style="flex:1;min-width:120px">'+
@@ -502,9 +505,10 @@ function reelCard(e){
       '<button onclick="finish(\''+esc(e.id)+'\')">Save</button></div>'+
       '<button class="sec" style="width:100%;margin-top:8px" onclick="fullConsume(\''+esc(e.id)+'\')">Full Consume (balance 0)</button></div>';
   }
-  var wait=/^WAIT/.test(e.erpNote||"");
+  var wait=/^WAIT/.test(e.erpNote||""), chainW=(e.erpNote||"").match(/^Waiting for (\S+)/);
   var st=e.erpStatus==="QC Hold"?'<span class="pill warn">Waiting for approver QC OK</span>'
-        :e.erpStatus==="Pending"?(wait?'<span class="pill warn">Production entry pending</span>':'<span class="pill">Ready for ERP</span>')
+        :e.erpStatus==="Pending"?(chainW?'<span class="pill warn">Waiting for '+esc(chainW[1])+'</span>'
+              :wait?'<span class="pill warn">Production entry pending</span>':'<span class="pill">Ready for ERP</span>')
         :'<span class="pill bad" title="'+esc(e.erpNote)+'">'+esc(e.erpStatus)+'</span>';
   return '<div class="reel">'+head+st+del+'</div><div class="mut">Balance '+e.balanceWt+' kg &middot; <b>Consumed '+e.consumedWt+' kg</b>'+
     (e.qcApprovedBy?' &middot; approved by '+esc(e.qcApprovedBy):'')+
