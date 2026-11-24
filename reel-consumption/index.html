@@ -34,6 +34,7 @@
   .mut{color:var(--mut);font-size:14px}
   .pill{display:inline-block;white-space:nowrap;padding:3px 9px;border-radius:99px;font-size:13px;background:#2b3a4a}
   .pill.merged{background:#3b2a5c;color:#d7c6ff}
+  .pill.erpd{background:#123b66;color:#a9d4ff}
   .pill.ok{background:#1d4d2b;color:#9be9a8}.pill.warn{background:#5a3d0a;color:#ffd58a}.pill.bad{background:#5a1d1d;color:#ffb3ad}
   .row{display:flex;gap:8px;align-items:center}
   .slot{border:2px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
@@ -138,6 +139,7 @@
         <button class="sec" onclick="setPly(3)">3 ply</button>
         <button class="sec" onclick="setPly(5)">5 ply</button></div>
       <div id="mergeBox" style="margin-top:10px"></div>
+      <div id="erpBox" style="margin-top:10px"></div>
     </div>
     <div class="steps">
       <button id="tab1" onclick="setStep(1)">1. Load reel</button>
@@ -225,9 +227,12 @@ var API={
       try{ var s=await sb("rc_job_summary",{p_pps:pps})||{};
         jobs.forEach(function(j){j.sum=s[j.pp]||null; j.reels=j.sum?j.sum.reels:0}) }
       catch(e){ var c=await sb("rc_reel_counts",{p_pps:pps})||{}; jobs.forEach(function(j){j.reels=c[j.pp]||0}) }
-      try{ var m=await sb("rc_job_merges",{p_pps:pps,p_wos:jobs.map(function(j){return j.wo})})||{};
-        jobs.forEach(function(j){j.merge=(m.into||{})[j.pp]||null; j.under=(m.under||{})[j.wo]||null}) }
-      catch(e){ /* SQL 15 abhi nahi chala to merge info ke bina */ }}
+      // ek call: merge info + ERP reel-wise rows (ERP done) — SQL 16; na ho to SQL 15 wali call
+      var wos=jobs.map(function(j){return j.wo}), m=null;
+      try{ m=await sb("rc_job_extra",{p_pps:pps,p_wos:wos}) }
+      catch(e){ try{ m=await sb("rc_job_merges",{p_pps:pps,p_wos:wos}) }catch(e2){ m=null } }
+      if(m){ ERP_SYNC=m.erpSyncedAt||ERP_SYNC;
+        jobs.forEach(function(j){j.merge=(m.into||{})[j.pp]||null; j.under=(m.under||{})[j.wo]||null; j.erp=(m.erp||{})[j.pp]||null}) }}
     return jobs},
   mergeJob:function(pp,wo,mainWo,mainPp,name,pin){return sb("rc_merge_job",{p_pp:pp,p_wo:wo,p_main_wo:mainWo,p_main_pp:mainPp||null,p_name:name,p_pin:pin})},
   unmergeJob:function(pp,name,pin){return sb("rc_unmerge_job",{p_pp:pp,p_name:name,p_pin:pin})},
@@ -260,9 +265,10 @@ function loadJobs(){ var my=++jobsReq; $("jobs").innerHTML='<span class="mut">Lo
   API.getJobs($("pDate").value).then(function(j){ if(my!==jobsReq)return; JOBS=j; renderJobs() })
     .catch(function(e){ if(my!==jobsReq)return; toast(e&&e.message?e.message:String(e),"bad") }) }
 /* consumption status: Not started / Partial / Done (sab ply par reel + sabka weight bhara) */
+var ERP_SYNC="";
 function jobState(j){
   if(j.merge) return "merged";
-  var s=j.sum; if(!s||!s.reels) return "none";
+  var s=j.sum; if(!s||!s.reels) return (j.erp&&j.erp.erpOnly>0) ? "erp" : "none";   // ERP me consumption, app se nahi
   return (s.plies>=j.ply && !s.loaded) ? "done" : "part";
 }
 /* chip tap = sirf wahi jobs; dobara tap = filter hatao */
@@ -276,17 +282,19 @@ function chip(key,cls,label,n){
 function renderJobs(){
   var q=$("q").value.trim().toLowerCase();
   var all=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
-  var cnt={done:0,part:0,none:0,merged:0}, kgT=0;
+  var cnt={done:0,part:0,none:0,merged:0,erp:0}, kgT=0;
   all.forEach(function(j){cnt[jobState(j)]++; kgT+=j.sum?Number(j.sum.kg)||0:0});
   var list=JFILTER?all.filter(function(j){return jobState(j)===JFILTER}):all;
   $("jobsSum").innerHTML=all.length?((($("pDate").value)?'Planning '+esc(fDate(pDate($("pDate").value)))+': ':'Recent: ')+all.length+' jobs &middot; '+
     chip('done','ok','Done',cnt.done)+' '+chip('part','warn','Partial',cnt.part)+' '+chip('none','','Not started',cnt.none)+
+    (cnt.erp||JFILTER==='erp'?' '+chip('erp','erpd','ERP done',cnt.erp):'')+
     (cnt.merged||JFILTER==='merged'?' '+chip('merged','merged','Merged',cnt.merged):'')+' &middot; '+
     tn(kgT/1000)+' t'+(JFILTER?' <span class="mut">(showing '+list.length+' &middot; tap again to show all)</span>':'')):'';
   if(!list.length){$("jobs").innerHTML='<span class="mut">'+(all.length?'No job in this filter. Tap the chip again to show all.':'No corrugation job found'+($("pDate").value?' for this planning date':'')+'.')+'</span>';return}
   $("jobs").innerHTML=list.map(function(j){
     var st=jobState(j), s=j.sum||{};
     var badge=st==="merged"?'<span class="pill merged">Merged &rarr; '+esc(j.merge.mainWo)+'</span>':
+      st==="erp"?'<span class="pill erpd">ERP done</span><div class="mut">'+j.erp.reels+' reel'+(j.erp.reels>1?'s':'')+' in ERP &middot; '+tn((Number(j.erp.kg)||0)/1000)+' t</div>':
       st==="done"?'<span class="pill ok">Done</span>':st==="part"?'<span class="pill warn">Partial</span>':'<span class="pill">Not started</span>';
     if(j.under&&j.under.length) badge+='<div class="mut" style="color:#c5b3ff">+ merged: '+j.under.map(esc).join(", ")+'</div>';
     var info=s.reels?'<div class="mut">'+s.reels+' reel'+(s.reels>1?'s':'')+' &middot; '+tn((Number(s.kg)||0)/1000)+' t'+
@@ -305,8 +313,26 @@ function openJob(pp){
   $("jSub").textContent=job.customer+" | "+job.model+" | Qty "+job.qty;
   $("listView").style.display="none"; $("jobView").style.display="block";
   ENTRIES=[]; found=null; activePly=0; $("slots").innerHTML='<div class="card mut">Loading...</div>';
-  MERGE_OPEN=false; drawMerge();
+  MERGE_OPEN=false; drawMerge(); drawErpBox();
   call("getEntries",[job.pp],function(list){ENTRIES=list; autoStep(); draw()});
+}
+
+/* ---------- Job kholne par: ERP me pehle se bhari reels (rc_job_reels, sirf jab ERP me rows hon) ---------- */
+function drawErpBox(){
+  var b=$("erpBox"); if(!b||!job) return; b.innerHTML="";
+  if(!job.erp||!job.erp.reels) return;
+  var me=job;
+  b.innerHTML='<div class="mut">Loading ERP reels...</div>';
+  API.jobReels(job.wo).then(function(r){
+    if(job!==me) return;
+    var rows=((r&&r.reels)||[]).filter(function(x){return x.status==="In ERP"});
+    var warn=job.erp.erpOnly>0?'<div style="color:#ffd58a;margin:4px 0">&#9888; Is job ki consumption ERP me pehle se hai &mdash; double entry na karein.</div>':'';
+    b.innerHTML='<div style="border:1px solid #1f4f80;border-radius:10px;padding:8px 10px;background:#0d2238">'+
+      '<span class="pill erpd">ERP done</span> <b>'+rows.length+' reel'+(rows.length===1?'':'s')+' in ERP</b> <span class="mut">&middot; '+tn((Number(r.totalKg)||0)/1000)+' t'+
+      (ERP_SYNC?' &middot; ERP synced '+esc(ERP_SYNC):'')+'</span>'+warn+
+      rows.map(function(x){return '<div style="padding:5px 0;border-top:1px solid #1f3a55">Ply '+esc(x.ply||"-")+' &middot; <b>Reel '+esc(x.reelNo)+'</b> <span class="mut">mill '+esc(x.millNo||"-")+
+        ' &middot; '+esc(x.gsm)+'/'+esc(x.bf)+'/'+esc(x.size)+' &middot; '+esc(x.date||"")+'</span> &middot; <b>'+kg(x.kg)+' kg</b></div>'}).join("")+'</div>';
+  }).catch(function(e){ if(job===me) b.innerHTML='<span class="mut">ERP reels: '+esc(e&&e.message?e.message:String(e))+'</span>' });
 }
 
 /* ---------- Job merge (sirf app/report me dikhane ke liye; ERP me kuch nahi jaata). Approver naam + PIN. ---------- */
@@ -748,6 +774,7 @@ function findReel(){
 function chooseReel(i){ found={reel:found.multi[i]}; draw() }
 function loadIt(){
   if(busy||!found||!found.reel)return;
+  if(job.erp&&job.erp.erpOnly>0&&!confirm("⚠ Is job ki consumption ERP me pehle se hai ("+job.erp.erpOnly+" reel ERP me, app se nahi). Double entry na karein.\n\nPhir bhi ye reel load karni hai?"))return;
   call("loadReel",[{wo:job.wo,pp:job.pp,customer:job.customer,item:job.item,date:job.date,
      plyCount:job.ply,plyNo:activePly,reelNo:found.reel.reelNo,operator:opName()}],
     function(list){ ENTRIES=list; toast("Reel loaded on ply "+activePly,"ok"); found=null; activePly=0; autoStep(); draw() });
