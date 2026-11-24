@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Production Planning — SQL TEST</title>
+<meta name="theme-color" content="#5b3df5">
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;overscroll-behavior:none;font-family:system-ui,sans-serif;background:#f3f1fb}
+body{display:flex;flex-direction:column}
+header{padding:8px 12px;background:#35256b;color:white;font-size:13px}
+header a{color:white;margin-left:12px}
+#status{display:block;font-size:12px;margin-top:3px}
+iframe{flex:1;min-height:0;width:100%;border:0;overscroll-behavior:none}
+</style>
+</head>
+<body>
+<header>SQL TEST — Live floor app se alag
+<a id="direct" target="_blank" rel="noopener">Test app seedha kholen</a>
+<span id="status" role="status">Test copy khul rahi hai. Sirf authorized Google account se login karein.</span>
+</header>
+<iframe id="app" title="Production Planning SQL test" allow="clipboard-write"></iframe>
+<script>
+"use strict";
+const APP_URL="https://script.google.com/macros/s/AKfycbx6hf0eYBsnDSaIgfYBeYA8-sRzGLukEuThvROn9u-UFMq3R3KLLX7YsBq00YJMTrhl/exec";
+const frame=document.getElementById("app"),status=document.getElementById("status");
+document.getElementById("direct").href=APP_URL;
+const PREFIX="planning-sql-test-v1:";
+const validKey=k=>typeof k==="string"&&(k==="sqltestdraft"||/^sqltestrep_[A-Z_]{1,32}$/.test(k));
+const validOrigin=o=>o==="https://script.google.com"||/^https:\/\/[a-z0-9-]+-script\.googleusercontent\.com$/.test(o);
+let drafts=Object.create(null),peer=null,peerOrigin=null;
+let durable=true;
+try{
+ const probe=PREFIX+"probe";localStorage.setItem(probe,"1");localStorage.removeItem(probe);
+ for(let i=0;i<localStorage.length;i++){
+  const stored=localStorage.key(i);
+  if(!stored||!stored.startsWith(PREFIX))continue;
+  const k=stored.slice(PREFIX.length);if(!validKey(k))continue;
+  try{drafts[k]=JSON.parse(localStorage.getItem(stored));}catch(_){}
+ }
+}catch(_){durable=false;}
+function notice(){
+ status.textContent=durable
+  ? "TEST: Draft is browser me surakshit rahega. Save ka success message SQL save ki pushti karega."
+  : "Browser storage unavailable: app band/refresh karne se pehle entry save karein.";
+}
+window.addEventListener("message",e=>{
+ const d=e.data;
+ if(!validOrigin(e.origin)||!e.source||e.source===window||!d||d.pv3!==1)return;
+ if(!peer){
+  if(d.op!=="getall")return;
+  peer=e.source;peerOrigin=e.origin;
+ }
+ if(e.source!==peer||e.origin!==peerOrigin)return;
+ if(d.op==="getall"){
+  e.source.postMessage({pv3:1,op:"all",data:drafts},e.origin);notice();return;
+ }
+ if(!validKey(d.k))return;
+ if(d.op==="set"){
+  let raw;try{raw=JSON.stringify(d.v);}catch(_){return;}
+  if(typeof raw!=="string"||raw.length>100000)return;
+  drafts[d.k]=JSON.parse(raw);
+  try{localStorage.setItem(PREFIX+d.k,raw);}catch(_){durable=false;}
+ }else if(d.op==="del"){
+  delete drafts[d.k];
+  try{localStorage.removeItem(PREFIX+d.k);}catch(_){durable=false;}
+ }else return;
+ notice();
+});
+window.addEventListener("beforeunload",e=>{
+ if(Object.keys(drafts).length){e.preventDefault();e.returnValue="";}
+});
+// Never refresh the iframe on visibility, focus, network reconnect or a timer.
+document.addEventListener("touchmove",e=>{
+ if(e.target===document.body||e.target===document.documentElement){
+  if(e.cancelable)e.preventDefault();
+ }
+},{passive:false});
+frame.src=APP_URL;
+</script>
+<noscript>App chalane ke liye JavaScript enable karein.</noscript>
+</body>
+</html>
