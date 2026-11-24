@@ -33,6 +33,7 @@
   .job:hover{background:#1f2d3b}
   .mut{color:var(--mut);font-size:14px}
   .pill{display:inline-block;white-space:nowrap;padding:3px 9px;border-radius:99px;font-size:13px;background:#2b3a4a}
+  .pill.merged{background:#3b2a5c;color:#d7c6ff}
   .pill.ok{background:#1d4d2b;color:#9be9a8}.pill.warn{background:#5a3d0a;color:#ffd58a}.pill.bad{background:#5a1d1d;color:#ffb3ad}
   .row{display:flex;gap:8px;align-items:center}
   .slot{border:2px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
@@ -136,6 +137,7 @@
       <div class="mut" style="margin-top:8px">Wrong ply?
         <button class="sec" onclick="setPly(3)">3 ply</button>
         <button class="sec" onclick="setPly(5)">5 ply</button></div>
+      <div id="mergeBox" style="margin-top:10px"></div>
     </div>
     <div class="steps">
       <button id="tab1" onclick="setStep(1)">1. Load reel</button>
@@ -222,8 +224,13 @@ var API={
     if(jobs.length){var pps=jobs.map(function(j){return j.pp});
       try{ var s=await sb("rc_job_summary",{p_pps:pps})||{};
         jobs.forEach(function(j){j.sum=s[j.pp]||null; j.reels=j.sum?j.sum.reels:0}) }
-      catch(e){ var c=await sb("rc_reel_counts",{p_pps:pps})||{}; jobs.forEach(function(j){j.reels=c[j.pp]||0}) }}
+      catch(e){ var c=await sb("rc_reel_counts",{p_pps:pps})||{}; jobs.forEach(function(j){j.reels=c[j.pp]||0}) }
+      try{ var m=await sb("rc_job_merges",{p_pps:pps,p_wos:jobs.map(function(j){return j.wo})})||{};
+        jobs.forEach(function(j){j.merge=(m.into||{})[j.pp]||null; j.under=(m.under||{})[j.wo]||null}) }
+      catch(e){ /* SQL 15 abhi nahi chala to merge info ke bina */ }}
     return jobs},
+  mergeJob:function(pp,wo,mainWo,mainPp,name,pin){return sb("rc_merge_job",{p_pp:pp,p_wo:wo,p_main_wo:mainWo,p_main_pp:mainPp||null,p_name:name,p_pin:pin})},
+  unmergeJob:function(pp,name,pin){return sb("rc_unmerge_job",{p_pp:pp,p_name:name,p_pin:pin})},
   getEntries:function(pp){return sb("rc_list_entries",{p_pp:pp})},
   lookupReel:function(v){return sb("rc_lookup_reel",{p_value:v})},
   loadReel:function(e){return sb("rc_load_reel",{p:e})},
@@ -254,21 +261,34 @@ function loadJobs(){ var my=++jobsReq; $("jobs").innerHTML='<span class="mut">Lo
     .catch(function(e){ if(my!==jobsReq)return; toast(e&&e.message?e.message:String(e),"bad") }) }
 /* consumption status: Not started / Partial / Done (sab ply par reel + sabka weight bhara) */
 function jobState(j){
+  if(j.merge) return "merged";
   var s=j.sum; if(!s||!s.reels) return "none";
   return (s.plies>=j.ply && !s.loaded) ? "done" : "part";
 }
+/* chip tap = sirf wahi jobs; dobara tap = filter hatao */
+var JFILTER="";
+function setJobFilter(f){ JFILTER=(JFILTER===f)?"":f; renderJobs() }
+function chip(key,cls,label,n){
+  var on=JFILTER===key;
+  return '<span class="pill '+cls+'" role="button" tabindex="0" onclick="setJobFilter(\''+key+'\')" style="cursor:pointer;'+
+    (on?'outline:2px solid #fff;outline-offset:1px;font-weight:800':(JFILTER?'opacity:.55':''))+'">'+(on?'&#10003; ':'')+label+' '+n+'</span>';
+}
 function renderJobs(){
   var q=$("q").value.trim().toLowerCase();
-  var list=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
-  var cnt={done:0,part:0,none:0}, kgT=0;
-  list.forEach(function(j){cnt[jobState(j)]++; kgT+=j.sum?Number(j.sum.kg)||0:0});
-  $("jobsSum").innerHTML=list.length?((($("pDate").value)?'Planning '+esc(fDate(pDate($("pDate").value)))+': ':'Recent: ')+list.length+' jobs &middot; '+
-    '<span class="pill ok">Done '+cnt.done+'</span> <span class="pill warn">Partial '+cnt.part+'</span> <span class="pill">Not started '+cnt.none+'</span> &middot; '+
-    tn(kgT/1000)+' t'):'';
-  if(!list.length){$("jobs").innerHTML='<span class="mut">No corrugation job found'+($("pDate").value?' for this planning date':'')+'.</span>';return}
+  var all=JOBS.filter(function(j){return !q||(j.wo+" "+j.customer+" "+j.pp+" "+j.model).toLowerCase().indexOf(q)>=0});
+  var cnt={done:0,part:0,none:0,merged:0}, kgT=0;
+  all.forEach(function(j){cnt[jobState(j)]++; kgT+=j.sum?Number(j.sum.kg)||0:0});
+  var list=JFILTER?all.filter(function(j){return jobState(j)===JFILTER}):all;
+  $("jobsSum").innerHTML=all.length?((($("pDate").value)?'Planning '+esc(fDate(pDate($("pDate").value)))+': ':'Recent: ')+all.length+' jobs &middot; '+
+    chip('done','ok','Done',cnt.done)+' '+chip('part','warn','Partial',cnt.part)+' '+chip('none','','Not started',cnt.none)+
+    (cnt.merged||JFILTER==='merged'?' '+chip('merged','merged','Merged',cnt.merged):'')+' &middot; '+
+    tn(kgT/1000)+' t'+(JFILTER?' <span class="mut">(showing '+list.length+' &middot; tap again to show all)</span>':'')):'';
+  if(!list.length){$("jobs").innerHTML='<span class="mut">'+(all.length?'No job in this filter. Tap the chip again to show all.':'No corrugation job found'+($("pDate").value?' for this planning date':'')+'.')+'</span>';return}
   $("jobs").innerHTML=list.map(function(j){
     var st=jobState(j), s=j.sum||{};
-    var badge=st==="done"?'<span class="pill ok">Done</span>':st==="part"?'<span class="pill warn">Partial</span>':'<span class="pill">Not started</span>';
+    var badge=st==="merged"?'<span class="pill merged">Merged &rarr; '+esc(j.merge.mainWo)+'</span>':
+      st==="done"?'<span class="pill ok">Done</span>':st==="part"?'<span class="pill warn">Partial</span>':'<span class="pill">Not started</span>';
+    if(j.under&&j.under.length) badge+='<div class="mut" style="color:#c5b3ff">+ merged: '+j.under.map(esc).join(", ")+'</div>';
     var info=s.reels?'<div class="mut">'+s.reels+' reel'+(s.reels>1?'s':'')+' &middot; '+tn((Number(s.kg)||0)/1000)+' t'+
       (s.inErp?' &middot; '+s.inErp+' in ERP':'')+(s.loaded?' &middot; '+s.loaded+' wt pending':'')+'</div>':
       (j.reels?'<div class="mut">'+j.reels+' reels</div>':'');
@@ -285,7 +305,57 @@ function openJob(pp){
   $("jSub").textContent=job.customer+" | "+job.model+" | Qty "+job.qty;
   $("listView").style.display="none"; $("jobView").style.display="block";
   ENTRIES=[]; found=null; activePly=0; $("slots").innerHTML='<div class="card mut">Loading...</div>';
+  MERGE_OPEN=false; drawMerge();
   call("getEntries",[job.pp],function(list){ENTRIES=list; autoStep(); draw()});
+}
+
+/* ---------- Job merge (sirf app/report me dikhane ke liye; ERP me kuch nahi jaata). Approver naam + PIN. ---------- */
+var MERGE_OPEN=false;
+function mgrInputs(){
+  var m=""; try{m=localStorage.getItem("rc_mgr")||""}catch(e){}
+  return '<div class="row" style="margin-top:6px;flex-wrap:wrap"><input id="mgName" placeholder="Approver name" value="'+esc(m)+'" style="flex:1;min-width:120px">'+
+    '<input id="mgPin" type="password" inputmode="numeric" placeholder="PIN" style="width:110px"></div>';
+}
+function drawMerge(){
+  var b=$("mergeBox"); if(!b||!job) return;
+  if(job.merge){
+    b.innerHTML='<span class="pill merged">Merged &rarr; '+esc(job.merge.mainWo)+'</span> <span class="mut">by '+esc(job.merge.by||"")+' &middot; '+esc(job.merge.at||"")+'</span>'+
+      (MERGE_OPEN?'<div style="margin-top:6px">'+mgrInputs()+'<div class="row" style="margin-top:6px"><button onclick="doUnmerge()">Unmerge</button> <button class="sec" onclick="MERGE_OPEN=false;drawMerge()">Cancel</button></div></div>'
+        :' <button class="sec" onclick="MERGE_OPEN=true;drawMerge()">Unmerge</button>');
+    return;
+  }
+  if(job.under&&job.under.length){ b.innerHTML='<span class="mut">Merged under this job: </span><span class="pill merged">'+job.under.map(esc).join(", ")+'</span>'; return }
+  if(!MERGE_OPEN){ b.innerHTML='<button class="sec" onclick="MERGE_OPEN=true;drawMerge()">Merge with job&hellip;</button>'; return }
+  var opts=JOBS.filter(function(j){return j.pp!==job.pp&&j.wo!==job.wo&&!j.merge})
+    .map(function(j){return '<option value="'+esc(j.wo)+'">'+esc(j.wo)+' &middot; '+esc(j.customer)+'</option>'}).join("");
+  b.innerHTML='<div class="mut">Merge <b>'+esc(job.wo)+'</b> into main WO (only shown in app & report, nothing goes to ERP):</div>'+
+    '<input id="mgMain" list="mgList" placeholder="Main WO (e.g. 2627/11/0465)" style="width:100%;margin-top:6px"><datalist id="mgList">'+opts+'</datalist>'+
+    mgrInputs()+'<div class="row" style="margin-top:6px"><button onclick="doMerge()">Merge</button> <button class="sec" onclick="MERGE_OPEN=false;drawMerge()">Cancel</button></div>';
+}
+function mgrVals(){
+  var n=$("mgName").value.trim(), p=$("mgPin").value.trim();
+  if(!n){toast("Enter approver name","bad");$("mgName").focus();return null}
+  if(!p){toast("Enter your PIN","bad");$("mgPin").focus();return null}
+  try{localStorage.setItem("rc_mgr",n)}catch(e){}
+  return {n:n,p:p};
+}
+function afterMerge(r){
+  if(r&&r.ok){toast(r.msg,"ok"); MERGE_OPEN=false;
+    API.getJobs($("pDate").value).then(function(j){JOBS=j; var x=JOBS.filter(function(k){return k.pp===job.pp})[0]; if(x){x.sum=job.sum; job=x} drawMerge()})}
+  else {toast((r&&r.msg)||"Failed","bad"); var p=$("mgPin"); if(p)p.value=""}
+}
+function doMerge(){
+  if(busy)return; var mw=$("mgMain").value.trim();
+  if(!mw){toast("Choose main WO","bad");$("mgMain").focus();return}
+  var main=JOBS.filter(function(j){return j.wo===mw})[0];
+  if(!main){ var hit=JOBS.filter(function(j){return j.wo.slice(-mw.length)===mw}); if(hit.length===1){main=hit[0]; mw=main.wo} }
+  if(mw===job.wo){toast("Choose another job","bad");return}
+  var v=mgrVals(); if(!v)return;
+  call("mergeJob",[job.pp,job.wo,mw,main?main.pp:null,v.n,v.p],afterMerge);
+}
+function doUnmerge(){
+  if(busy)return; var v=mgrVals(); if(!v)return;
+  call("unmergeJob",[job.pp,v.n,v.p],afterMerge);
 }
 function back(){ job=null; $("jobView").style.display="none"; $("listView").style.display="block"; loadJobs() }
 function showTab(t){
@@ -365,7 +435,11 @@ function flagWos(wos){
   var u={}; wos.forEach(function(w){if(w)u[w]=1}); var list=Object.keys(u); if(!list.length) return;
   API.woFlags(list).then(function(F){ F=F||{};
     [].forEach.call(document.querySelectorAll("#rpBody tr[data-wo]"),function(tr){
-      var i=woFlagInfo(F[tr.getAttribute("data-wo")]); if(!i) return;
+      var f=F[tr.getAttribute("data-wo")]||{}, td=tr.firstElementChild;
+      if(f.mergedInto&&td){var t=document.createElement("div"); t.innerHTML='<span class="pill merged">Merged &rarr; '+esc(f.mergedInto)+'</span>'; td.appendChild(t)}
+      if(f.merged&&f.merged.length&&td){var u=document.createElement("div"); u.className="mut"; u.style.color="#c5b3ff";
+        u.innerHTML='&#8627; merged: '+f.merged.map(esc).join(", "); td.appendChild(u)}
+      var i=woFlagInfo(f); if(!i) return;
       var b=tr.querySelector(".wo"); if(b){b.style.color=i.col; b.style.background=i.col+"22"; b.style.padding="1px 6px"; b.style.borderRadius="6px"}
       var s=tr.querySelector(".woflag"); if(s) s.innerHTML=' <span style="font-size:12px;color:'+i.col+'">&#9888; '+esc(i.text)+'</span>';
     });
