@@ -286,7 +286,22 @@ function stRow(r){const d=r.data,box=el('div','prow'),top=el('div','top'),[c,t]=
  return box}
 function stDraw(rows,grouped){const L=$('slist');L.replaceChildren();if(!rows.length){L.textContent='Nothing found.';return}
  const by=new Map();for(const r of rows){const k=r.data['WO No']||'?';if(!by.has(k))by.set(k,[]);by.get(k).push(r)}
- for(const [wo,list] of by){const c=el('div','wo'),d=list[0].data;c.append(el('h3','',wo+' · JC '+(d['JC No']||'')),el('div','muted',(d.Customer||'')+' · '+(d['Model Name']||'')));for(const r of list)c.append(stRow(r));L.append(c)}}
+ const cards=[];for(const [wo,list] of by){const c=el('div','wo'),d=list[0].data;c.append(el('h3','',wo+' · JC '+(d['JC No']||'')),el('div','muted',(d.Customer||'')+' · '+(d['Model Name']||'')));const oc=el('div','');c.append(oc);cards.push([wo,oc]);for(const r of list)c.append(stRow(r));L.append(c)}
+ woOpenDecorate(cards)}
+/* 27-11-2026: ERP-closed job card — Manager can open it (Admin PC opens it in ERP, it shows in Job cards, closes again later) */
+async function woOpenDecorate(cards){if(!cards.length)return;let st={};try{st=await sb('pv3_wo_closed_state',{p_wos:cards.map(x=>x[0])})||{}}catch(e){return}
+ for(const [wo,box] of cards){const s=st[wo];if(!s)continue;const q=s.req;box.replaceChildren();
+  if(q&&q.state==='REQUESTED')box.append(el('div','rm','⏳ Opening in ERP… (asked by '+q.by+', '+q.at+'). Shows in Job cards in a few minutes.'));
+  else if(q&&(q.state==='OPENED'||q.state==='CLOSE_REQ'))box.append(el('div','rm',q.state==='CLOSE_REQ'?'🔒 Will be closed again in ERP after its entries reach ERP.':'📂 Open in ERP and in Job cards (since '+q.at+'). Closes again by itself 2 hours after the last change.'));
+  else if(q&&q.state==='FAILED'&&s.closed)box.append(el('div','rm','✗ Could not open in ERP: '+(q.note||'')));
+  else if(s.closed)box.append(el('div','rm','🔒 Closed in ERP — not shown in Job cards.'+(MGR?'':' (Manager can open it)')));
+  if(!MGR)continue;const bt=el('div','btns');
+  if(s.closed&&(!q||q.state==='FAILED')){const b=el('button','ghost','📂 Open job card');b.type='button';b.onclick=()=>woOpenAct(wo,'OPEN');bt.append(b)}
+  if(q&&(q.state==='OPENED'||q.state==='REQUESTED')){const b=el('button','ghost',q.state==='REQUESTED'?'✕ Cancel request':'🔒 Close job card again');b.type='button';b.onclick=()=>woOpenAct(wo,'CLOSE');bt.append(b)}
+  if(bt.children.length)box.append(bt)}}
+async function woOpenAct(wo,act){let why='';if(act==='OPEN'){why=(prompt('Open WO '+wo+' in ERP and show it in Job cards.\nWhat change is needed? (reason)')||'').trim();if(why.length<3){message('Reason is required.','error');return}}
+ else if(!confirm('Close WO '+wo+' again (ERP Short Close + hide from Job cards)?'))return;
+ try{const r=await sb('pv3_mgr_wo_open',{p_pin:MGR.pin,p_wo:wo,p_action:act,p_by:MGR.name,p_reason:why});message((r&&r.message)||'Done.','success');stRedraw()}catch(e){message(e.message,'error')}}
 function stRedraw(){if(stLast)stLast()}
 async function stSearch(){const q=$('ssearch').value.trim();if(q.length<2){message('Type at least 2 characters.','error');return}
  $('slist').textContent='Searching…';stLast=stSearch;try{const rows=await sb('pv3_status_search',{p_q:q});stDraw(rows||[])}catch(e){$('slist').textContent=e.message}}
