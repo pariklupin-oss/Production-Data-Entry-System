@@ -118,7 +118,7 @@ async function rpc(fn,body){const ctl=new AbortController(),t=setTimeout(()=>ctl
   const tx=await r.text();let j=null;try{j=tx?JSON.parse(tx):null}catch(e){}if(!r.ok)throw Error((j&&(j.message||j.hint))||('Server error '+r.status));return j}
  catch(e){if(e.name==='AbortError')throw Error('Slow internet — please click Load again');if(e instanceof TypeError)throw Error('Could not connect to the server. Check the internet connection.');throw e}finally{clearTimeout(t)}}
 
-function start(){const u=new URL(location.href);const k=u.searchParams.get('key');
+function start(){const u=new URL(location.href);const k=u.searchParams.get('key');const tb=u.searchParams.get('tab');if(tb&&R[tb])CUR=tb;
  if(k){KEY=k;try{localStorage.setItem('pv3repkey',k)}catch(e){}}else{try{KEY=localStorage.getItem('pv3repkey')||''}catch(e){}}
  const f=new Date();f.setDate(f.getDate()-6);
  let fr=iso(f),to=TODAY;try{const s=JSON.parse(sessionStorage.getItem('pv3rng')||'null');if(s){fr=s[0];to=s[1]}}catch(e){}
@@ -163,6 +163,39 @@ R.pending={name:'Pending Jobs',build(){
   kpis:[['Pending processes',det.length],['Ready',det.filter(d=>d[9]==='Ready').length],['Waiting',det.filter(d=>d[9]!=='Ready').length],['Jobs (WO)',new Set(det.map(d=>d[1])).size]],
   sum:{title:'By process / machine',cols:['Process','Machine','Pending','Ready','Ready Plan Qty','Total Plan Qty'],rows:Object.values(sm).sort((a,b)=>b[3]-a[3])},
   det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','PP Code','Process','Machine','Plan Qty','Status','Days','Action'],rows:det}}}};
+// ---------- Stage-wise pending (Corrugation / Printing / Folder Gluer / Auto Stitching / Manual) ----------
+// Ek process ko stage me baanto. Strapping / OQC / Outward automatic hain — kisi stage me nahi.
+function stageOf(r){const p=String(r['Process Name']||'').toUpperCase(),m=String(r['Machine Name']||'').toUpperCase(),x=p+' '+m;
+ if(/STRAP|QUALITY|OQC|OUTWARD/.test(p))return null;
+ if(/CORRUGAT|BOARD/.test(x))return 'CORRUGATION';
+ if(/MANUAL|SEMI/.test(m))return 'MANUAL';
+ if(/PRINT/.test(p)||/PRINTER|JF MACHINE|SMARTECH|NEW MACHINE/.test(m))return 'PRINTING';
+ if(/FOLD|GLU/.test(x))return 'FOLDER GLUER';
+ if(/AUTO STITCH/.test(x)||(/STITCH/.test(p)&&/AUTO/.test(m)))return 'AUTO STITCHING';
+ return 'MANUAL'}
+// Kisi process (PP) ki aakhri production date — saare lots (extend bhi) me se sabse nayi
+function ppLastDate(r){let d='';for(const x of (WO[r['WO No']]||[]))if(x['PP Code']===r['PP Code']){const e=hasQty(x)||isDone(x)?effDate(x):'';if(e&&e>d)d=e}return d}
+const STAGES=[['corr','CORRUGATION','Corrugation Pending'],['print','PRINTING','Printing Pending'],['fg','FOLDER GLUER','Folder Gluer Pending'],['stitch','AUTO STITCHING','Auto Stitching Pending'],['manual','MANUAL','Manual Pending']];
+function stageRows(stage){const det=[];
+ for(const k in WO){if(!woOpen(k))continue;const l=WO[k].filter(r=>!isExt(r));
+  for(const r of l){if(r._closed||isDone(r)||stageOf(r)!==stage)continue;
+   const prev=l.filter(x=>num(x['Route Sequence'])<num(r['Route Sequence']));
+   if(!prev.every(isDone))continue;                      // pichhla process abhi baaki hai → is stage par abhi nahi aaya
+   const lp=prev[prev.length-1];const pdt=lp?ppLastDate(lp):'';const since=pdt||pd(r.Date);
+   det.push([dmy(pd(r.Date)),r['WO No'],r['JC No'],r.Customer,r['Model Name']||r['Item Code']||'',r['PP Code'],r['Process Name'],r['Machine Name'],
+    num(r['Plan Qty']),lp?lp['Process Name']:'— (first process)',lp?dmy(pdt):'',lp?ppQty(lp):'',pdt===TODAY?'Today':'',days(since,TODAY),{wo:r['WO No']}])}}
+ det.sort((a,b)=>(b[12]==='Today')-(a[12]==='Today')||num(b[13])-num(a[13])||String(a[1]).localeCompare(String(b[1])));
+ return det}
+for(const [id,stage,name] of STAGES)R[id]={name,build(){
+ const det=stageRows(stage);const first=stage==='CORRUGATION';
+ const sm={};for(const d of det){const s=sm[d[7]]=sm[d[7]]||[d[7],0,0,0];s[1]++;if(d[12]==='Today')s[2]++;s[3]+=d[8]}
+ const today=det.filter(d=>d[12]==='Today');
+ return {note:first
+   ?'Open jobs whose Corrugation is not done yet (not limited by the date range). Oldest first.'
+   :`Jobs ready for ${name.replace(' Pending','')}: every earlier process is complete, but this one is not done yet (not limited by the date range). "Today" = the previous process was completed today. Days = days since the previous process was completed.`,
+  kpis:[['Pending jobs',det.length],...(first?[]:[['Previous done today',today.length]]),['Plan qty',det.reduce((s,d)=>s+d[8],0)],['Older than 3 days',det.filter(d=>d[13]>3).length]],
+  sum:{title:'By machine',cols:['Machine','Pending','Came today','Plan Qty'],rows:Object.values(sm).sort((a,b)=>b[1]-a[1])},
+  det:{title:'Detail',cols:['Plan Date','WO No','JC','Customer','Item','PP Code','Process','Machine','Plan Qty','Previous process','Previous done on','Previous qty','Came','Days','Action'],rows:det}}}};
 R.wip={name:'WIP (Job wise)',build(){
  const det=[];
  for(const k in WO){if(!woOpen(k))continue;const l=WO[k].filter(r=>!isExt(r));if(!l.length)continue;
@@ -273,7 +306,7 @@ R.all={name:'All Data',build(){
  return {note:'All loaded data (selected range + all open jobs). Use search to find anything.',kpis:[['Rows',det.length]],
   sum:null,det:{title:'All rows',cols:cols,rows:det}}}};
 
-const ORDER=['pending','wip','pva','entries','shiftmc','extend','check','shift','hold','all'];
+const ORDER=['pending','corr','print','fg','stitch','manual','wip','pva','entries','shiftmc','extend','check','shift','hold','all'];
 function get(id){if(!BUILT[id])BUILT[id]=R[id].build();return BUILT[id]}
 function drawTabs(){$('tabs').innerHTML=ORDER.map(id=>{const n=id==='shift'?REPS.length:get(id).det.rows.length;
  return `<button id="tb_${id}" class="${id===CUR?'on':''}" onclick="show('${id}')">${esc(R[id].name)}<span class="n">${n}</span></button>`}).join('')}
